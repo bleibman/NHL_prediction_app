@@ -14,6 +14,16 @@ import streamlit as st
 
 from db.supabase import select
 from models.predictor import StanleyCupPredictor
+from ui.components import (
+    format_season,
+    highlight_card,
+    info_box,
+    inject_css,
+    page_header,
+    section_divider,
+    stat_card,
+)
+from ui.theme import PLOTLY_LAYOUT
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -25,187 +35,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ---------------------------------------------------------------------------
-# Custom CSS
-# ---------------------------------------------------------------------------
-st.markdown("""
-<style>
-/* --- Global --- */
-[data-testid="stAppViewContainer"] {
-    background: linear-gradient(180deg, #0d1117 0%, #161b22 100%);
-}
-section[data-testid="stSidebar"] {
-    background: #0d1117;
-    border-right: 1px solid #21262d;
-}
-section[data-testid="stSidebar"] .stRadio label {
-    color: #c9d1d9 !important;
-}
-
-/* --- Typography --- */
-h1, h2, h3, .stMarkdown h1, .stMarkdown h2, .stMarkdown h3 {
-    color: #f0f6fc !important;
-    font-weight: 700 !important;
-}
-
-/* --- Metric cards --- */
-[data-testid="stMetric"] {
-    background: #161b22;
-    border: 1px solid #21262d;
-    border-radius: 10px;
-    padding: 16px 20px;
-}
-[data-testid="stMetric"] label {
-    color: #8b949e !important;
-    font-size: 0.85rem !important;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-}
-[data-testid="stMetric"] [data-testid="stMetricValue"] {
-    color: #f0f6fc !important;
-    font-size: 2rem !important;
-    font-weight: 700 !important;
-}
-
-/* --- Dataframes --- */
-[data-testid="stDataFrame"] {
-    border: 1px solid #21262d;
-    border-radius: 8px;
-    overflow: hidden;
-}
-
-/* --- Tabs --- */
-.stTabs [data-baseweb="tab-list"] {
-    gap: 8px;
-    border-bottom: 1px solid #21262d;
-}
-.stTabs [data-baseweb="tab"] {
-    border-radius: 6px 6px 0 0;
-    padding: 8px 20px;
-    color: #8b949e;
-    font-weight: 600;
-}
-.stTabs [aria-selected="true"] {
-    background: #161b22;
-    color: #f0f6fc !important;
-    border-bottom: 2px solid #1f6feb;
-}
-
-/* --- Buttons --- */
-.stButton > button {
-    background: #1f6feb;
-    color: #ffffff;
-    border: none;
-    border-radius: 6px;
-    padding: 8px 24px;
-    font-weight: 600;
-    transition: background 0.2s;
-}
-.stButton > button:hover {
-    background: #388bfd;
-    color: #ffffff;
-    border: none;
-}
-
-/* --- Sidebar brand --- */
-.sidebar-brand {
-    text-align: center;
-    padding: 1.5rem 0 1rem;
-    border-bottom: 1px solid #21262d;
-    margin-bottom: 1rem;
-}
-.sidebar-brand h2 {
-    font-size: 1.3rem !important;
-    margin: 0 !important;
-    letter-spacing: 0.04em;
-}
-.sidebar-brand p {
-    color: #8b949e;
-    font-size: 0.8rem;
-    margin: 4px 0 0;
-}
-
-/* --- Page header --- */
-.page-header {
-    padding: 0.5rem 0 1.5rem;
-    border-bottom: 1px solid #21262d;
-    margin-bottom: 1.5rem;
-}
-.page-header h1 {
-    margin: 0 !important;
-    font-size: 1.8rem !important;
-}
-.page-header p {
-    color: #8b949e;
-    margin: 4px 0 0;
-    font-size: 0.95rem;
-}
-
-/* --- Stat card --- */
-.stat-card {
-    background: #161b22;
-    border: 1px solid #21262d;
-    border-radius: 10px;
-    padding: 20px;
-    margin-bottom: 1rem;
-}
-.stat-card h4 {
-    color: #8b949e !important;
-    font-size: 0.8rem !important;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    margin: 0 0 6px !important;
-    font-weight: 600 !important;
-}
-.stat-card .value {
-    color: #f0f6fc;
-    font-size: 2rem;
-    font-weight: 700;
-    line-height: 1.2;
-}
-.stat-card .sub {
-    color: #8b949e;
-    font-size: 0.8rem;
-    margin-top: 4px;
-}
-
-/* --- Divider --- */
-.section-divider {
-    border: none;
-    border-top: 1px solid #21262d;
-    margin: 2rem 0;
-}
-
-/* --- Footer --- */
-.sidebar-footer {
-    position: fixed;
-    bottom: 0;
-    padding: 12px 16px;
-    font-size: 0.75rem;
-    color: #484f58;
-    border-top: 1px solid #21262d;
-}
-</style>
-""", unsafe_allow_html=True)
-
-
-# ---------------------------------------------------------------------------
-# Plotly theme
-# ---------------------------------------------------------------------------
-PLOTLY_LAYOUT = dict(
-    paper_bgcolor="rgba(0,0,0,0)",
-    plot_bgcolor="rgba(0,0,0,0)",
-    font=dict(color="#c9d1d9", family="Inter, system-ui, sans-serif"),
-    margin=dict(l=40, r=20, t=40, b=40),
-    xaxis=dict(gridcolor="#21262d", zerolinecolor="#21262d"),
-    yaxis=dict(gridcolor="#21262d", zerolinecolor="#21262d"),
-)
-
-NHL_COLORS = [
-    "#1f6feb", "#388bfd", "#58a6ff", "#79c0ff",
-    "#3fb950", "#56d364", "#f0883e", "#d29922",
-    "#f85149", "#da3633", "#bc8cff", "#8b949e",
-]
+inject_css()
 
 
 # ---------------------------------------------------------------------------
@@ -224,27 +54,34 @@ def query_df(table: str, columns: str = "*", **filters) -> pd.DataFrame:
     return pd.DataFrame(rows) if rows else pd.DataFrame()
 
 
-def format_season(s: int) -> str:
-    return f"{s // 10000}\u2013{str(s // 10000 + 1)[-2:]}"
+def _build_standings_df(rows: list[dict], teams_map: dict[int, str]) -> pd.DataFrame:
+    """Transform raw season_stats rows into a display-ready standings DataFrame."""
+    for row in rows:
+        row["Team"] = teams_map.get(row.pop("team_id"), "?")
+        row["PP%"] = round((row.pop("pp_pct") or 0) * 100, 1)
+        row["PK%"] = round((row.pop("pk_pct") or 0) * 100, 1)
+        row["FO%"] = round((row.pop("faceoff_pct") or 0) * 100, 1)
+        row["PTS%"] = round((row.pop("point_pct") or 0) * 100, 1)
+        row["SF/G"] = round(row.pop("shots_for_pg") or 0, 1)
+        row["SA/G"] = round(row.pop("shots_against_pg") or 0, 1)
 
-
-def page_header(title: str, subtitle: str):
-    st.markdown(
-        f'<div class="page-header"><h1>{title}</h1><p>{subtitle}</p></div>',
-        unsafe_allow_html=True,
+    return pd.DataFrame(rows).rename(
+        columns={
+            "games_played": "GP",
+            "wins": "W",
+            "losses": "L",
+            "ot_losses": "OTL",
+            "points": "PTS",
+            "goals_for": "GF",
+            "goals_against": "GA",
+        }
     )
 
 
-def stat_card(label: str, value, sub: str = ""):
-    sub_html = f'<div class="sub">{sub}</div>' if sub else ""
-    st.markdown(
-        f'<div class="stat-card">'
-        f'<h4>{label}</h4>'
-        f'<div class="value">{value}</div>'
-        f'{sub_html}'
-        f'</div>',
-        unsafe_allow_html=True,
-    )
+STANDINGS_COLS = [
+    "Team", "GP", "W", "L", "OTL", "PTS", "PTS%",
+    "GF", "GA", "PP%", "PK%", "FO%", "SF/G", "SA/G",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -315,7 +152,7 @@ if page_name == "Dashboard":
     with c4:
         stat_card("Players Tracked", f"{len(players):,}")
 
-    st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
+    section_divider()
 
     # --- Standings table ---
     st.subheader("Standings")
@@ -331,34 +168,10 @@ if page_name == "Dashboard":
     teams_map = {t["id"]: t["abbreviation"] for t in select("teams", columns="id,abbreviation")}
 
     if stats:
-        for row in stats:
-            row["Team"] = teams_map.get(row.pop("team_id"), "?")
-            row["PP%"] = round((row.pop("pp_pct") or 0) * 100, 1)
-            row["PK%"] = round((row.pop("pk_pct") or 0) * 100, 1)
-            row["FO%"] = round((row.pop("faceoff_pct") or 0) * 100, 1)
-            row["PTS%"] = round((row.pop("point_pct") or 0) * 100, 1)
-            row["SF/G"] = round(row.pop("shots_for_pg") or 0, 1)
-            row["SA/G"] = round(row.pop("shots_against_pg") or 0, 1)
-
-        df = pd.DataFrame(stats).rename(
-            columns={
-                "games_played": "GP",
-                "wins": "W",
-                "losses": "L",
-                "ot_losses": "OTL",
-                "points": "PTS",
-                "goals_for": "GF",
-                "goals_against": "GA",
-            }
-        )
-
-        display_cols = [
-            "Team", "GP", "W", "L", "OTL", "PTS", "PTS%",
-            "GF", "GA", "PP%", "PK%", "FO%", "SF/G", "SA/G",
-        ]
+        df = _build_standings_df(stats, teams_map)
 
         st.dataframe(
-            df[display_cols],
+            df[STANDINGS_COLS],
             width="stretch",
             hide_index=True,
             column_config={
@@ -373,7 +186,7 @@ if page_name == "Dashboard":
             },
         )
 
-    st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
+    section_divider()
 
     # --- Top scorers preview ---
     st.subheader("Top 10 Scorers")
@@ -440,30 +253,10 @@ elif page_name == "Historical Data":
             order="points.desc",
         )
         if rows:
-            for r in rows:
-                r["Team"] = tmap.get(r.pop("team_id"), "?")
-                r["PTS%"] = round((r.pop("point_pct") or 0) * 100, 1)
-                r["PP%"] = round((r.pop("pp_pct") or 0) * 100, 1)
-                r["PK%"] = round((r.pop("pk_pct") or 0) * 100, 1)
-                r["FO%"] = round((r.pop("faceoff_pct") or 0) * 100, 1)
-                r["SF/G"] = round(r.pop("shots_for_pg") or 0, 1)
-                r["SA/G"] = round(r.pop("shots_against_pg") or 0, 1)
-
-            df = pd.DataFrame(rows).rename(
-                columns={
-                    "games_played": "GP",
-                    "wins": "W",
-                    "losses": "L",
-                    "ot_losses": "OTL",
-                    "points": "PTS",
-                    "goals_for": "GF",
-                    "goals_against": "GA",
-                }
-            )
+            df = _build_standings_df(rows, tmap)
 
             st.dataframe(
-                df[["Team", "GP", "W", "L", "OTL", "PTS", "PTS%",
-                    "GF", "GA", "PP%", "PK%", "FO%", "SF/G", "SA/G"]],
+                df[STANDINGS_COLS],
                 width="stretch",
                 hide_index=True,
                 column_config={
@@ -547,21 +340,15 @@ elif page_name == "Historical Data":
             # Highlight champion
             final = [s for s in series if s["Round"] == "Stanley Cup Final"]
             if final:
-                champ = final[0]["Winner"]
-                st.markdown(
-                    f'<div style="text-align:center; padding:1.5rem; margin-top:1rem; '
-                    f'background:#161b22; border:1px solid #21262d; border-radius:10px;">'
-                    f'<div style="font-size:0.85rem; color:#8b949e; text-transform:uppercase; '
-                    f'letter-spacing:0.05em;">Stanley Cup Champion</div>'
-                    f'<div style="font-size:2.5rem; margin-top:0.3rem;">\U0001F3C6</div>'
-                    f'<div style="font-size:1.5rem; font-weight:700; color:#f0f6fc; '
-                    f'margin-top:0.3rem;">{champ}</div></div>',
-                    unsafe_allow_html=True,
+                highlight_card(
+                    label="Stanley Cup Champion",
+                    icon="\U0001F3C6",
+                    title=final[0]["Winner"],
                 )
         else:
             st.info("No playoff data for this season.")
 
-    st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
+    section_divider()
 
     # --- Cross-season team comparison ---
     st.subheader("Team Trends")
@@ -657,28 +444,20 @@ elif page_name == "Predictions":
         if predictions.empty:
             st.error("Not enough data to generate predictions.")
         else:
-            st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
+            section_divider()
 
             # --- Top contender highlight ---
             top = predictions.iloc[0]
             c1, c2, c3 = st.columns([1, 2, 1])
             with c2:
-                st.markdown(
-                    f'<div style="text-align:center; padding:2rem; '
-                    f'background:linear-gradient(135deg, #161b22 0%, #1c2333 100%); '
-                    f'border:1px solid #1f6feb; border-radius:12px;">'
-                    f'<div style="font-size:0.85rem; color:#8b949e; text-transform:uppercase; '
-                    f'letter-spacing:0.05em;">Predicted Favorite</div>'
-                    f'<div style="font-size:2rem; margin-top:0.5rem;">\U0001F3C6</div>'
-                    f'<div style="font-size:1.8rem; font-weight:700; color:#f0f6fc; '
-                    f'margin-top:0.3rem;">{top["team_name"]}</div>'
-                    f'<div style="font-size:1rem; color:#1f6feb; margin-top:0.3rem;">'
-                    f'{top["abbreviation"]} \u2014 {top["cup_probability"]:.1f}% chance</div>'
-                    f'</div>',
-                    unsafe_allow_html=True,
+                highlight_card(
+                    label="Predicted Favorite",
+                    icon="\U0001F3C6",
+                    title=top["team_name"],
+                    subtitle=f'{top["abbreviation"]} \u2014 {top["cup_probability"]:.1f}% chance',
                 )
 
-            st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
+            section_divider()
 
             # --- Bar chart ---
             st.subheader("Win Probabilities")
@@ -744,14 +523,10 @@ elif page_name == "Predictions":
 elif page_name == "Data Refresh":
     page_header("Data Refresh", "Fetch the latest data from the NHL API")
 
-    st.markdown(
-        '<div style="background:#161b22; border:1px solid #21262d; '
-        'border-radius:10px; padding:1.2rem; margin-bottom:1.5rem;">'
-        '<p style="color:#c9d1d9; margin:0;">'
-        'The ETL pipeline fetches teams, season stats, game results, '
-        'playoff series, and player stats from the NHL API and upserts them '
-        'into the database.</p></div>',
-        unsafe_allow_html=True,
+    info_box(
+        "The ETL pipeline fetches teams, season stats, game results, "
+        "playoff series, and player stats from the NHL API and upserts them "
+        "into the database."
     )
 
     c1, c2 = st.columns(2)
