@@ -2,8 +2,9 @@
 
 from fastapi import APIRouter
 
-from db.supabase import select
+from db.supabase import select, rpc
 from api.schemas import DashboardSummary, StandingRow, ScorerRow
+from api import cache
 
 router = APIRouter()
 
@@ -34,37 +35,48 @@ def _build_standings(rows: list[dict], teams_map: dict[int, str]) -> list[Standi
     return result
 
 
+def _get_teams_map() -> dict[int, str]:
+    cached = cache.get("teams_map")
+    if cached is not None:
+        return cached
+    teams_map = {
+        t["id"]: t["abbreviation"]
+        for t in select("teams", columns="id,abbreviation")
+    }
+    cache.set("teams_map", teams_map, ttl=3600)
+    return teams_map
+
+
 @router.get("/summary", response_model=DashboardSummary)
 def get_summary():
-    seasons = select(
-        "season_stats", columns="season_id", order="season_id.desc", limit=1
-    )
-    if not seasons:
+    cached = cache.get("dashboard_summary")
+    if cached is not None:
+        return cached
+
+    data = rpc("get_dashboard_summary")
+    if not data:
         return DashboardSummary(
             season_id=0, season_display="N/A",
             games_count=0, playoff_series_count=0, players_count=0,
         )
 
-    latest = int(seasons[0]["season_id"])
-    games = select("games", columns="id", filters={"season_id": f"eq.{latest}"})
-    playoffs = select(
-        "playoff_series", columns="id", filters={"season_id": f"eq.{latest}"}
+    result = DashboardSummary(
+        season_id=data["season_id"],
+        season_display=_format_season(data["season_id"]),
+        games_count=data["games_count"],
+        playoff_series_count=data["playoff_series_count"],
+        players_count=data["players_count"],
     )
-    players = select(
-        "player_stats", columns="id", filters={"season_id": f"eq.{latest}"}
-    )
-
-    return DashboardSummary(
-        season_id=latest,
-        season_display=_format_season(latest),
-        games_count=len(games),
-        playoff_series_count=len(playoffs),
-        players_count=len(players),
-    )
+    cache.set("dashboard_summary", result)
+    return result
 
 
 @router.get("/standings", response_model=list[StandingRow])
 def get_standings():
+    cached = cache.get("dashboard_standings")
+    if cached is not None:
+        return cached
+
     seasons = select(
         "season_stats", columns="season_id", order="season_id.desc", limit=1
     )
@@ -80,15 +92,18 @@ def get_standings():
         filters={"season_id": f"eq.{latest}"},
         order="points.desc",
     )
-    teams_map = {
-        t["id"]: t["abbreviation"]
-        for t in select("teams", columns="id,abbreviation")
-    }
-    return _build_standings(stats, teams_map)
+    result = _build_standings(stats, _get_teams_map())
+    cache.set("dashboard_standings", result)
+    return result
 
 
 @router.get("/top-scorers", response_model=list[ScorerRow])
 def get_top_scorers(limit: int = 10):
+    cache_key = f"dashboard_scorers_{limit}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     seasons = select(
         "season_stats", columns="season_id", order="season_id.desc", limit=1
     )
@@ -103,7 +118,7 @@ def get_top_scorers(limit: int = 10):
         order="points.desc",
         limit=limit,
     )
-    return [
+    result = [
         ScorerRow(
             player_name=p["player_name"],
             team=p["team_abbrev"],
@@ -115,3 +130,5 @@ def get_top_scorers(limit: int = 10):
         )
         for p in players
     ]
+    cache.set(cache_key, result)
+    return result

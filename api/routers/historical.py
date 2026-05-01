@@ -4,12 +4,25 @@ from fastapi import APIRouter, HTTPException
 
 from db.supabase import select
 from api.schemas import StandingRow, ScorerRow, PlayoffSeriesRow, TeamTrendPoint
+from api import cache
 
 router = APIRouter()
 
 
 def _format_season(s: int) -> str:
     return f"{s // 10000}\u2013{str(s // 10000 + 1)[-2:]}"
+
+
+def _get_teams_map() -> dict[int, str]:
+    cached = cache.get("teams_map")
+    if cached is not None:
+        return cached
+    teams_map = {
+        t["id"]: t["abbreviation"]
+        for t in select("teams", columns="id,abbreviation")
+    }
+    cache.set("teams_map", teams_map, ttl=3600)
+    return teams_map
 
 
 def _build_standings(rows: list[dict], teams_map: dict[int, str]) -> list[StandingRow]:
@@ -36,14 +49,25 @@ def _build_standings(rows: list[dict], teams_map: dict[int, str]) -> list[Standi
 
 @router.get("/seasons", response_model=list[int])
 def get_seasons():
+    cached = cache.get("historical_seasons")
+    if cached is not None:
+        return cached
+
     rows = select("season_stats", columns="season_id", order="season_id.asc")
     if not rows:
         return []
-    return sorted(set(r["season_id"] for r in rows))
+    result = sorted(set(r["season_id"] for r in rows))
+    cache.set("historical_seasons", result)
+    return result
 
 
 @router.get("/standings/{season_id}", response_model=list[StandingRow])
 def get_standings(season_id: int):
+    cache_key = f"hist_standings_{season_id}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     stats = select(
         "season_stats",
         columns="team_id,games_played,wins,losses,ot_losses,points,"
@@ -52,15 +76,18 @@ def get_standings(season_id: int):
         filters={"season_id": f"eq.{season_id}"},
         order="points.desc",
     )
-    teams_map = {
-        t["id"]: t["abbreviation"]
-        for t in select("teams", columns="id,abbreviation")
-    }
-    return _build_standings(stats, teams_map)
+    result = _build_standings(stats, _get_teams_map())
+    cache.set(cache_key, result)
+    return result
 
 
 @router.get("/scorers/{season_id}", response_model=list[ScorerRow])
 def get_scorers(season_id: int, limit: int = 50):
+    cache_key = f"hist_scorers_{season_id}_{limit}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     players = select(
         "player_stats",
         columns="player_name,team_abbrev,position,games_played,"
@@ -69,7 +96,7 @@ def get_scorers(season_id: int, limit: int = 50):
         order="points.desc",
         limit=limit,
     )
-    return [
+    result = [
         ScorerRow(
             player_name=p["player_name"],
             team=p["team_abbrev"],
@@ -82,10 +109,17 @@ def get_scorers(season_id: int, limit: int = 50):
         )
         for p in players
     ]
+    cache.set(cache_key, result)
+    return result
 
 
 @router.get("/playoffs/{season_id}", response_model=list[PlayoffSeriesRow])
 def get_playoffs(season_id: int):
+    cache_key = f"hist_playoffs_{season_id}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     series = select(
         "playoff_series",
         columns="round,top_seed_id,bottom_seed_id,"
@@ -96,10 +130,7 @@ def get_playoffs(season_id: int):
     if not series:
         return []
 
-    teams_map = {
-        t["id"]: t["abbreviation"]
-        for t in select("teams", columns="id,abbreviation")
-    }
+    teams_map = _get_teams_map()
     round_names = {1: "Round 1", 2: "Round 2", 3: "Conf. Finals", 4: "Stanley Cup Final"}
 
     result = []
@@ -113,11 +144,17 @@ def get_playoffs(season_id: int):
             score=f"{s['top_seed_wins']}\u2013{s['bottom_seed_wins']}",
             winner=winner,
         ))
+    cache.set(cache_key, result)
     return result
 
 
 @router.get("/team-trend/{team_abbrev}", response_model=list[TeamTrendPoint])
 def get_team_trend(team_abbrev: str):
+    cache_key = f"team_trend_{team_abbrev}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     teams = select("teams", columns="id,abbreviation")
     team_id = next(
         (t["id"] for t in teams if t["abbreviation"] == team_abbrev), None
@@ -146,10 +183,17 @@ def get_team_trend(team_abbrev: str):
             point_pct=round((row.get("point_pct") or 0) * 100, 1),
             gf_ga_ratio=round(row["goals_for"] / ga, 2),
         ))
+    cache.set(cache_key, result)
     return result
 
 
 @router.get("/teams", response_model=list[str])
 def get_teams():
+    cached = cache.get("teams_list")
+    if cached is not None:
+        return cached
+
     teams = select("teams", columns="abbreviation")
-    return sorted(t["abbreviation"] for t in teams)
+    result = sorted(t["abbreviation"] for t in teams)
+    cache.set("teams_list", result, ttl=3600)
+    return result

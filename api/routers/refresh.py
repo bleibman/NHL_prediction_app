@@ -8,6 +8,7 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
 from api.schemas import RefreshRequest
+from api import cache
 
 router = APIRouter()
 
@@ -41,6 +42,7 @@ async def refresh_start(body: RefreshRequest):
             except Exception as e:
                 yield f"data: {json.dumps({'step': i + 1, 'total': 6, 'label': label, 'status': 'error', 'error': str(e)})}\n\n"
                 break
+        cache.invalidate()
         yield f"data: {json.dumps({'done': True})}\n\n"
 
     return StreamingResponse(stream(), media_type="text/event-stream")

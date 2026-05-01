@@ -115,3 +115,12 @@ def delete(table: str, filters: dict[str, str]) -> None:
     """DELETE rows matching filters."""
     resp = _session.delete(_url(table), params=filters, timeout=30)
     resp.raise_for_status()
+
+
+def rpc(func_name: str, params: dict | None = None):
+    """Call a Supabase RPC (database function)."""
+    base = SUPABASE_URL.rstrip("/").replace("/rest/v1", "")
+    url = f"{base}/rest/v1/rpc/{func_name}"
+    resp = _session.post(url, json=params or {}, timeout=30)
+    resp.raise_for_status()
+    return resp.json()

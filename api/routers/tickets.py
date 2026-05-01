@@ -12,6 +12,7 @@ from api.schemas import (
     TeamPrice,
     AttendancePoint,
 )
+from api import cache
 
 router = APIRouter()
 
@@ -21,6 +22,10 @@ def _format_season(s: int) -> str:
 
 
 def _load_snapshots():
+    cached = cache.get("ticket_snapshots")
+    if cached is not None:
+        return cached
+
     snapshots = select(
         "ticket_snapshots",
         columns="seatgeek_event_id,game_date,home_team_id,away_team_id,"
@@ -29,7 +34,9 @@ def _load_snapshots():
     )
     teams_list = select("teams", columns="id,name,abbreviation")
     teams_map = {t["id"]: t["abbreviation"] for t in teams_list}
-    return snapshots, teams_map
+    result = (snapshots, teams_map)
+    cache.set("ticket_snapshots", result)
+    return result
 
 
 @router.get("/summary", response_model=TicketSummary)
@@ -147,6 +154,11 @@ def get_team_prices():
 
 @router.get("/attendance", response_model=list[AttendancePoint])
 def get_attendance(team_abbrev: str | None = None):
+    cache_key = f"attendance_{team_abbrev or 'all'}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     attendance_games = select(
         "games",
         columns="home_team_id,season_id,attendance",
@@ -173,7 +185,7 @@ def get_attendance(team_abbrev: str | None = None):
         .reset_index()
         .sort_values("season_id")
     )
-    return [
+    result = [
         AttendancePoint(
             season_id=int(row["season_id"]),
             season_display=_format_season(int(row["season_id"])),
@@ -181,10 +193,16 @@ def get_attendance(team_abbrev: str | None = None):
         )
         for _, row in season_avg.iterrows()
     ]
+    cache.set(cache_key, result)
+    return result
 
 
 @router.get("/attendance-teams", response_model=list[str])
 def get_attendance_teams():
+    cached = cache.get("attendance_teams")
+    if cached is not None:
+        return cached
+
     attendance_games = select(
         "games",
         columns="home_team_id,attendance",
@@ -198,4 +216,6 @@ def get_attendance_teams():
 
     att_df = pd.DataFrame(attendance_games)
     att_df["team"] = att_df["home_team_id"].map(teams_map)
-    return sorted(att_df["team"].dropna().unique().tolist())
+    result = sorted(att_df["team"].dropna().unique().tolist())
+    cache.set("attendance_teams", result)
+    return result
