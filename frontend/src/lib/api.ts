@@ -1,5 +1,6 @@
 import type {
   DashboardSummary,
+  DashboardInit,
   StandingRow,
   ScorerRow,
   PlayoffSeriesRow,
@@ -10,24 +11,65 @@ import type {
   PriceTrendPoint,
   TeamPrice,
   AttendancePoint,
+  TeamPriceTrendPoint,
+  PriceAttendancePoint,
+  PriceSpreadPoint,
+  TicketFilterOptions,
 } from "./types";
 
 const BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
+// ── Client-side cache ──
+const CLIENT_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const _clientCache = new Map<string, { ts: number; data: unknown }>();
+
 async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
+  // Only cache GET requests (no init body)
+  const useCache = !init?.method || init.method === "GET";
+  if (useCache) {
+    const entry = _clientCache.get(path);
+    if (entry && Date.now() - entry.ts < CLIENT_CACHE_TTL) {
+      return entry.data as T;
+    }
+  }
+
   const res = await fetch(`${BASE}${path}`, init);
   if (!res.ok) {
     throw new Error(`API error ${res.status}: ${res.statusText}`);
   }
-  return res.json();
+  const data: T = await res.json();
+
+  if (useCache) {
+    _clientCache.set(path, { ts: Date.now(), data });
+  }
+  return data;
 }
 
 // Dashboard
+export const getDashboardInit = () =>
+  fetchJson<DashboardInit>("/api/dashboard/init");
+
 export const getDashboardSummary = () =>
   fetchJson<DashboardSummary>("/api/dashboard/summary");
 
-export const getDashboardStandings = () =>
-  fetchJson<StandingRow[]>("/api/dashboard/standings");
+export const getDashboardSeasons = () =>
+  fetchJson<number[]>("/api/dashboard/seasons");
+
+export const getDashboardDivisions = () =>
+  fetchJson<string[]>("/api/dashboard/divisions");
+
+export const getDashboardStandings = (params?: {
+  season_id?: number;
+  division?: string;
+  team?: string;
+}) => {
+  const searchParams = new URLSearchParams();
+  if (params?.season_id) searchParams.set("season_id", String(params.season_id));
+  if (params?.division) searchParams.set("division", params.division);
+  if (params?.team) searchParams.set("team", params.team);
+  const qs = searchParams.toString();
+  return fetchJson<StandingRow[]>(`/api/dashboard/standings${qs ? `?${qs}` : ""}`);
+};
 
 export const getDashboardTopScorers = (limit = 10) =>
   fetchJson<ScorerRow[]>(`/api/dashboard/top-scorers?limit=${limit}`);
@@ -63,21 +105,46 @@ export const runPredictions = (seasonId: number) =>
   });
 
 // Tickets
-export const getTicketSummary = () =>
-  fetchJson<TicketSummary>("/api/tickets/summary");
+function buildQs(params: Record<string, string | undefined>): string {
+  const sp = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v) sp.set(k, v);
+  }
+  const qs = sp.toString();
+  return qs ? `?${qs}` : "";
+}
 
-export const getUpcomingGames = () =>
-  fetchJson<UpcomingGame[]>("/api/tickets/upcoming");
+export const getTicketFilterOptions = () =>
+  fetchJson<TicketFilterOptions>("/api/tickets/filter-options");
 
-export const getPriceTrends = () =>
-  fetchJson<PriceTrendPoint[]>("/api/tickets/price-trends");
+export const getTicketSummary = (params?: { division?: string; team?: string }) =>
+  fetchJson<TicketSummary>(`/api/tickets/summary${buildQs({ division: params?.division, team: params?.team })}`);
 
-export const getTeamPrices = () =>
-  fetchJson<TeamPrice[]>("/api/tickets/team-prices");
+export const getUpcomingGames = (params?: { division?: string; team?: string }) =>
+  fetchJson<UpcomingGame[]>(`/api/tickets/upcoming${buildQs({ division: params?.division, team: params?.team })}`);
 
-export const getAttendance = (teamAbbrev?: string) =>
+export const getPriceTrends = (params?: { division?: string; team?: string }) =>
+  fetchJson<PriceTrendPoint[]>(`/api/tickets/price-trends${buildQs({ division: params?.division, team: params?.team })}`);
+
+export const getPriceTrendsByTeam = (params?: { division?: string; team?: string }) =>
+  fetchJson<TeamPriceTrendPoint[]>(`/api/tickets/price-trends-by-team${buildQs({ division: params?.division, team: params?.team })}`);
+
+export const getTeamPrices = (params?: { division?: string }) =>
+  fetchJson<TeamPrice[]>(`/api/tickets/team-prices${buildQs({ division: params?.division })}`);
+
+export const getPriceSpread = (params?: { division?: string; team?: string }) =>
+  fetchJson<PriceSpreadPoint[]>(`/api/tickets/spread${buildQs({ division: params?.division, team: params?.team })}`);
+
+export const getPriceAttendanceCorrelation = () =>
+  fetchJson<PriceAttendancePoint[]>("/api/tickets/price-attendance-correlation");
+
+export const getAttendance = (params?: { team_abbrev?: string; season_id?: number; division?: string }) =>
   fetchJson<AttendancePoint[]>(
-    `/api/tickets/attendance${teamAbbrev ? `?team_abbrev=${teamAbbrev}` : ""}`
+    `/api/tickets/attendance${buildQs({
+      team_abbrev: params?.team_abbrev,
+      season_id: params?.season_id ? String(params.season_id) : undefined,
+      division: params?.division,
+    })}`
   );
 
 export const getAttendanceTeams = () =>

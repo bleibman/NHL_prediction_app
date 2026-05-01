@@ -62,6 +62,8 @@ export interface PredictionRow {
 export interface TicketSummary {
   avg_price: number | null;
   lowest_price: number | null;
+  highest_price: number | null;
+  avg_spread: number | null;
   total_listings: number | null;
   games_tracked: number;
   snapshot_date: string | null;
@@ -75,6 +77,10 @@ export interface UpcomingGame {
   low_price: number | null;
   high_price: number | null;
   listings: number | null;
+  venue_name: string | null;
+  venue_city: string | null;
+  venue_capacity: number | null;
+  spread: number | null;
 }
 
 export interface PriceTrendPoint {
@@ -85,12 +91,51 @@ export interface PriceTrendPoint {
 export interface TeamPrice {
   team: string;
   average_price: number;
+  lowest_price: number | null;
+  highest_price: number | null;
+  spread: number | null;
 }
 
 export interface AttendancePoint {
   season_id: number;
   season_display: string;
   avg_attendance: number;
+}
+
+export interface TeamPriceTrendPoint {
+  team: string;
+  days_until_game: number;
+  average_price: number;
+}
+
+export interface PriceAttendancePoint {
+  team: string;
+  avg_ticket_price: number;
+  avg_attendance: number;
+  capacity: number | null;
+  utilization_pct: number | null;
+}
+
+export interface PriceSpreadPoint {
+  team: string;
+  avg_spread: number;
+  avg_lowest: number;
+  avg_highest: number;
+  listing_count: number;
+}
+
+export interface TicketFilterOptions {
+  divisions: string[];
+  teams: string[];
+}
+
+export interface DashboardInit {
+  summary: DashboardSummary;
+  standings: StandingRow[];
+  scorers: ScorerRow[];
+  seasons: number[];
+  divisions: string[];
+  teams: string[];
 }
 
 export interface RefreshEvent {

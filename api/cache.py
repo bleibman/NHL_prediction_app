@@ -5,7 +5,7 @@ from typing import Any
 
 _cache: dict[str, tuple[float, Any]] = {}
 
-DEFAULT_TTL = 300  # 5 minutes
+DEFAULT_TTL = 1800  # 30 minutes
 
 
 def get(key: str) -> Any | None:

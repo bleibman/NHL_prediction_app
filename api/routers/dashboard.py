@@ -3,7 +3,7 @@
 from fastapi import APIRouter
 
 from db.supabase import select, rpc
-from api.schemas import DashboardSummary, StandingRow, ScorerRow
+from api.schemas import DashboardSummary, DashboardInit, StandingRow, ScorerRow
 from api import cache
 
 router = APIRouter()
@@ -47,6 +47,16 @@ def _get_teams_map() -> dict[int, str]:
     return teams_map
 
 
+def _get_teams_full() -> list[dict]:
+    """Return full teams list with division/conference info."""
+    cached = cache.get("teams_full")
+    if cached is not None:
+        return cached
+    teams = select("teams", columns="id,abbreviation,name,division,conference")
+    cache.set("teams_full", teams, ttl=3600)
+    return teams
+
+
 @router.get("/summary", response_model=DashboardSummary)
 def get_summary():
     cached = cache.get("dashboard_summary")
@@ -71,29 +81,76 @@ def get_summary():
     return result
 
 
-@router.get("/standings", response_model=list[StandingRow])
-def get_standings():
-    cached = cache.get("dashboard_standings")
+@router.get("/seasons", response_model=list[int])
+def get_seasons():
+    cached = cache.get("dashboard_seasons")
     if cached is not None:
         return cached
 
-    seasons = select(
-        "season_stats", columns="season_id", order="season_id.desc", limit=1
-    )
-    if not seasons:
+    rows = select("season_stats", columns="season_id", order="season_id.desc")
+    if not rows:
         return []
+    result = sorted(set(r["season_id"] for r in rows), reverse=True)
+    cache.set("dashboard_seasons", result)
+    return result
 
-    latest = int(seasons[0]["season_id"])
+
+@router.get("/divisions", response_model=list[str])
+def get_divisions():
+    cached = cache.get("dashboard_divisions")
+    if cached is not None:
+        return cached
+
+    teams = _get_teams_full()
+    divisions = sorted(set(t["division"] for t in teams if t.get("division")))
+    cache.set("dashboard_divisions", divisions)
+    return divisions
+
+
+@router.get("/standings", response_model=list[StandingRow])
+def get_standings(
+    season_id: int | None = None,
+    division: str | None = None,
+    team: str | None = None,
+):
+    cache_key = f"dashboard_standings_{season_id}_{division}_{team}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    # Determine which season to use
+    if season_id is None:
+        seasons = select(
+            "season_stats", columns="season_id", order="season_id.desc", limit=1
+        )
+        if not seasons:
+            return []
+        season_id = int(seasons[0]["season_id"])
+
     stats = select(
         "season_stats",
         columns="team_id,games_played,wins,losses,ot_losses,points,"
         "goals_for,goals_against,pp_pct,pk_pct,faceoff_pct,"
         "point_pct,shots_for_pg,shots_against_pg",
-        filters={"season_id": f"eq.{latest}"},
+        filters={"season_id": f"eq.{season_id}"},
         order="points.desc",
     )
-    result = _build_standings(stats, _get_teams_map())
-    cache.set("dashboard_standings", result)
+
+    teams_map = _get_teams_map()
+
+    # Filter by division or specific team
+    if division or team:
+        teams_full = _get_teams_full()
+        if division:
+            allowed_ids = {t["id"] for t in teams_full if t.get("division") == division}
+            stats = [s for s in stats if s["team_id"] in allowed_ids]
+        elif team:
+            # team is an abbreviation
+            allowed_ids = {t["id"] for t in teams_full if t.get("abbreviation") == team}
+            stats = [s for s in stats if s["team_id"] in allowed_ids]
+
+    result = _build_standings(stats, teams_map)
+    cache.set(cache_key, result)
     return result
 
 
@@ -131,4 +188,31 @@ def get_top_scorers(limit: int = 10):
         for p in players
     ]
     cache.set(cache_key, result)
+    return result
+
+
+@router.get("/init", response_model=DashboardInit)
+def get_init():
+    """Return all data the dashboard needs in a single round-trip."""
+    cached = cache.get("dashboard_init")
+    if cached is not None:
+        return cached
+
+    summary = get_summary()
+    standings = get_standings()
+    scorers = get_top_scorers()
+    seasons = get_seasons()
+    divisions = get_divisions()
+    teams_full = _get_teams_full()
+    teams = sorted(t["abbreviation"] for t in teams_full if t.get("abbreviation"))
+
+    result = DashboardInit(
+        summary=summary,
+        standings=standings,
+        scorers=scorers,
+        seasons=seasons,
+        divisions=divisions,
+        teams=teams,
+    )
+    cache.set("dashboard_init", result)
     return result

@@ -71,6 +71,8 @@ class PredictionRow(BaseModel):
 class TicketSummary(BaseModel):
     avg_price: float | None
     lowest_price: int | None
+    highest_price: int | None = None
+    avg_spread: float | None = None
     total_listings: int | None
     games_tracked: int
     snapshot_date: str | None
@@ -84,6 +86,10 @@ class UpcomingGame(BaseModel):
     low_price: int | None
     high_price: int | None
     listings: int | None
+    venue_name: str | None = None
+    venue_city: str | None = None
+    venue_capacity: int | None = None
+    spread: int | None = None
 
 
 class PriceTrendPoint(BaseModel):
@@ -94,12 +100,51 @@ class PriceTrendPoint(BaseModel):
 class TeamPrice(BaseModel):
     team: str
     average_price: float
+    lowest_price: float | None = None
+    highest_price: float | None = None
+    spread: float | None = None
 
 
 class AttendancePoint(BaseModel):
     season_id: int
     season_display: str
     avg_attendance: float
+
+
+class TeamPriceTrendPoint(BaseModel):
+    team: str
+    days_until_game: int
+    average_price: float
+
+
+class PriceAttendancePoint(BaseModel):
+    team: str
+    avg_ticket_price: float
+    avg_attendance: float
+    capacity: int | None
+    utilization_pct: float | None
+
+
+class PriceSpreadPoint(BaseModel):
+    team: str
+    avg_spread: float
+    avg_lowest: float
+    avg_highest: float
+    listing_count: int
+
+
+class TicketFilterOptions(BaseModel):
+    divisions: list[str]
+    teams: list[str]
+
+
+class DashboardInit(BaseModel):
+    summary: DashboardSummary
+    standings: list[StandingRow]
+    scorers: list[ScorerRow]
+    seasons: list[int]
+    divisions: list[str]
+    teams: list[str]
 
 
 class RefreshRequest(BaseModel):

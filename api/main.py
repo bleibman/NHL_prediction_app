@@ -17,9 +17,7 @@ async def lifespan(app: FastAPI):
     """Warm caches on startup so first requests are fast."""
     logger.info("Warming caches...")
     try:
-        dashboard.get_summary()
-        dashboard.get_standings()
-        dashboard.get_top_scorers()
+        dashboard.get_init()
         historical.get_seasons()
         historical.get_teams()
         # Warm the latest season standings
