@@ -8,7 +8,12 @@ import DataTable from "@/components/ui/DataTable";
 import Select from "@/components/ui/Select";
 import {
   getDashboardInit,
+  getDashboardSummary,
   getDashboardStandings,
+  getDashboardTopScorers,
+  getDashboardSeasons,
+  getDashboardDivisions,
+  getTeams,
 } from "@/lib/api";
 import { formatSeason } from "@/lib/utils";
 import type { DashboardSummary, StandingRow, ScorerRow } from "@/lib/types";
@@ -82,26 +87,41 @@ export default function DashboardPage() {
     }
   }, []);
 
-  // Initial load — single API round-trip
+  // Initial load — try consolidated endpoint, fall back to individual calls
   useEffect(() => {
+    const applyData = (data: {
+      summary: DashboardSummary;
+      standings: StandingRow[];
+      scorers: ScorerRow[];
+      seasons: number[];
+      divisions: string[];
+      teams: string[];
+    }) => {
+      setSummary(data.summary);
+      setStandings(data.standings);
+      setScorers(data.scorers);
+      setSeasons(data.seasons);
+      setDivisions(data.divisions);
+      setTeams(data.teams);
+      if (data.seasons.length > 0) setSelectedSeason(String(data.seasons[0]));
+      if (data.divisions.length > 0) setSelectedDivision(data.divisions[0]);
+      if (data.teams.length > 0) setSelectedTeam(data.teams[0]);
+    };
+
     getDashboardInit()
-      .then((data) => {
-        setSummary(data.summary);
-        setStandings(data.standings);
-        setScorers(data.scorers);
-        setSeasons(data.seasons);
-        setDivisions(data.divisions);
-        setTeams(data.teams);
-        if (data.seasons.length > 0) {
-          setSelectedSeason(String(data.seasons[0]));
-        }
-        if (data.divisions.length > 0) {
-          setSelectedDivision(data.divisions[0]);
-        }
-        if (data.teams.length > 0) {
-          setSelectedTeam(data.teams[0]);
-        }
-      })
+      .then(applyData)
+      .catch(() =>
+        Promise.all([
+          getDashboardSummary(),
+          getDashboardStandings(),
+          getDashboardTopScorers(),
+          getDashboardSeasons(),
+          getDashboardDivisions(),
+          getTeams(),
+        ]).then(([sum, st, sc, seas, divs, tms]) =>
+          applyData({ summary: sum, standings: st, scorers: sc, seasons: seas, divisions: divs, teams: tms })
+        )
+      )
       .finally(() => setLoading(false));
   }, []);
 
