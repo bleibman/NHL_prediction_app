@@ -103,13 +103,14 @@ with st.sidebar:
             "\U0001F4CA  Dashboard",
             "\U0001F4DA  Historical Data",
             "\U0001F52E  Predictions",
+            "\U0001F3AB  Ticket Analytics",
             "\U0001F504  Data Refresh",
         ],
         label_visibility="collapsed",
     )
 
     st.markdown("---")
-    st.caption("Data source: NHL API")
+    st.caption("Data sources: NHL API, SeatGeek")
     st.caption("Seasons: 2005\u201306 through 2024\u201325")
 
 
@@ -517,16 +518,234 @@ elif page_name == "Predictions":
 
 
 # ---------------------------------------------------------------------------
+# Ticket Analytics
+# ---------------------------------------------------------------------------
+
+elif page_name == "Ticket Analytics":
+    page_header("Ticket Analytics", "NHL ticket prices, trends, and attendance data")
+
+    # Load ticket snapshot data
+    snapshots = select(
+        "ticket_snapshots",
+        columns="seatgeek_event_id,game_date,home_team_id,away_team_id,"
+        "snapshot_date,lowest_price,average_price,highest_price,listing_count",
+        order="game_date.asc",
+    )
+    teams_list = select("teams", columns="id,name,abbreviation")
+    teams_map = {t["id"]: t["abbreviation"] for t in teams_list}
+    teams_name_map = {t["id"]: t["name"] for t in teams_list}
+
+    if not snapshots:
+        info_box(
+            "No ticket data available yet. Set SEATGEEK_CLIENT_ID in your "
+            "environment and run Data Refresh to fetch ticket prices."
+        )
+    else:
+        snap_df = pd.DataFrame(snapshots)
+
+        # --- 1. Price overview cards ---
+        latest_date = snap_df["snapshot_date"].max()
+        latest = snap_df[snap_df["snapshot_date"] == latest_date]
+
+        avg_ticket = latest["average_price"].mean()
+        lowest_avail = latest["lowest_price"].min()
+        total_listings = latest["listing_count"].sum()
+        games_tracked = len(latest)
+
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            stat_card("Avg Ticket Price", f"${avg_ticket:.0f}" if pd.notna(avg_ticket) else "N/A")
+        with c2:
+            stat_card("Lowest Available", f"${lowest_avail:.0f}" if pd.notna(lowest_avail) else "N/A")
+        with c3:
+            stat_card("Total Listings", f"{int(total_listings):,}" if pd.notna(total_listings) else "N/A")
+        with c4:
+            stat_card("Games Tracked", str(games_tracked), sub=f"as of {latest_date}")
+
+        section_divider()
+
+        # --- 2. Upcoming games table ---
+        st.subheader("Upcoming Games")
+        upcoming = latest.copy()
+        upcoming["Home"] = upcoming["home_team_id"].map(teams_map)
+        upcoming["Away"] = upcoming["away_team_id"].map(teams_map)
+        upcoming["Date"] = pd.to_datetime(upcoming["game_date"]).dt.strftime("%b %d, %Y")
+        upcoming = upcoming.rename(columns={
+            "average_price": "Avg $",
+            "lowest_price": "Low $",
+            "highest_price": "High $",
+            "listing_count": "Listings",
+        })
+
+        display_cols = ["Date", "Home", "Away", "Avg $", "Low $", "High $", "Listings"]
+        available_cols = [c for c in display_cols if c in upcoming.columns]
+        st.dataframe(
+            upcoming[available_cols].sort_values("Date" if "Date" in available_cols else available_cols[0]),
+            width="stretch",
+            hide_index=True,
+            column_config={
+                "Avg $": st.column_config.NumberColumn("Avg $", format="$%d"),
+                "Low $": st.column_config.NumberColumn("Low $", format="$%d"),
+                "High $": st.column_config.NumberColumn("High $", format="$%d"),
+            },
+        )
+
+        section_divider()
+
+        # --- 3. Price trends chart ---
+        st.subheader("Price Trends")
+        unique_dates = snap_df["snapshot_date"].nunique()
+        if unique_dates >= 2:
+            # Calculate days until game for each snapshot
+            trend_df = snap_df.copy()
+            trend_df["game_date"] = pd.to_datetime(trend_df["game_date"])
+            trend_df["snapshot_date"] = pd.to_datetime(trend_df["snapshot_date"])
+            trend_df["days_until_game"] = (
+                trend_df["game_date"] - trend_df["snapshot_date"]
+            ).dt.days
+            trend_df = trend_df[trend_df["days_until_game"] >= 0]
+
+            if not trend_df.empty:
+                avg_by_days = (
+                    trend_df.groupby("days_until_game")["average_price"]
+                    .mean()
+                    .reset_index()
+                    .sort_values("days_until_game")
+                )
+
+                fig = px.line(
+                    avg_by_days,
+                    x="days_until_game",
+                    y="average_price",
+                    markers=True,
+                    color_discrete_sequence=["#1f6feb"],
+                )
+                fig.update_layout(
+                    **PLOTLY_LAYOUT,
+                    xaxis_title="Days Until Game",
+                    yaxis_title="Average Price ($)",
+                    showlegend=False,
+                    height=350,
+                )
+                fig.update_xaxes(autorange="reversed")
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                info_box("Not enough data points to show price trends yet.")
+        else:
+            info_box(
+                "Price trend analysis requires at least 2 days of snapshot data. "
+                "Run the daily ticket fetch to accumulate history."
+            )
+
+        section_divider()
+
+        # --- 4. Team price comparison ---
+        st.subheader("Average Price by Team")
+        team_prices = (
+            latest.groupby("home_team_id")["average_price"]
+            .mean()
+            .reset_index()
+            .sort_values("average_price", ascending=True)
+        )
+        team_prices["team"] = team_prices["home_team_id"].map(teams_map)
+        team_prices = team_prices.dropna(subset=["team", "average_price"])
+
+        if not team_prices.empty:
+            fig = go.Figure(
+                go.Bar(
+                    x=team_prices["average_price"],
+                    y=team_prices["team"],
+                    orientation="h",
+                    marker=dict(
+                        color=team_prices["average_price"],
+                        colorscale=[[0, "#21262d"], [0.5, "#1f6feb"], [1, "#58a6ff"]],
+                    ),
+                    text=team_prices["average_price"].apply(lambda v: f"${v:.0f}"),
+                    textposition="outside",
+                    textfont=dict(color="#c9d1d9", size=12),
+                )
+            )
+            fig.update_layout(
+                **PLOTLY_LAYOUT,
+                height=max(400, len(team_prices) * 28),
+                xaxis_title="Average Ticket Price ($)",
+                yaxis_title="",
+                showlegend=False,
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+    section_divider()
+
+    # --- 5. Historical attendance ---
+    st.subheader("Historical Attendance")
+    attendance_games = select(
+        "games",
+        columns="home_team_id,season_id,attendance",
+        filters={"attendance": "not.is.null"},
+    )
+
+    if attendance_games:
+        att_df = pd.DataFrame(attendance_games)
+        att_df["team"] = att_df["home_team_id"].map(teams_map)
+
+        team_options = sorted(att_df["team"].dropna().unique().tolist())
+        if team_options:
+            selected_team = st.selectbox("Select a team", team_options, key="att_team")
+            team_att = att_df[att_df["team"] == selected_team]
+
+            if not team_att.empty:
+                season_avg = (
+                    team_att.groupby("season_id")["attendance"]
+                    .mean()
+                    .reset_index()
+                    .sort_values("season_id")
+                )
+                season_avg["Season"] = season_avg["season_id"].apply(format_season)
+
+                fig = px.bar(
+                    season_avg,
+                    x="Season",
+                    y="attendance",
+                    color_discrete_sequence=["#1f6feb"],
+                )
+                fig.update_layout(
+                    **PLOTLY_LAYOUT,
+                    xaxis_title="",
+                    yaxis_title="Average Attendance",
+                    showlegend=False,
+                    height=350,
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                info_box(f"No attendance data for {selected_team}.")
+    else:
+        info_box(
+            "No attendance data imported yet. Download the Kaggle NHL Games CSV "
+            "and run: python scripts/import_attendance.py data/nhl_games.csv"
+        )
+
+    section_divider()
+
+    # --- 6. Price forecast placeholder ---
+    st.subheader("Price Forecast")
+    info_box(
+        "The price forecasting model requires at least 14 days of accumulated "
+        "snapshot data to train. Continue running the daily ticket fetch and "
+        "this section will activate automatically once sufficient data is available."
+    )
+
+
+# ---------------------------------------------------------------------------
 # Data Refresh
 # ---------------------------------------------------------------------------
 
 elif page_name == "Data Refresh":
-    page_header("Data Refresh", "Fetch the latest data from the NHL API")
+    page_header("Data Refresh", "Fetch the latest data from the NHL API and SeatGeek")
 
     info_box(
         "The ETL pipeline fetches teams, season stats, game results, "
-        "playoff series, and player stats from the NHL API and upserts them "
-        "into the database."
+        "playoff series, and player stats from the NHL API, plus ticket "
+        "prices from SeatGeek, and upserts them into the database."
     )
 
     c1, c2 = st.columns(2)
@@ -557,6 +776,7 @@ elif page_name == "Data Refresh":
         from etl.games import fetch_and_upsert_games
         from etl.playoffs import fetch_and_upsert_playoffs
         from etl.player_stats import fetch_and_upsert_player_stats
+        from etl.seatgeek import fetch_and_upsert_ticket_snapshots
 
         steps = [
             ("Teams", "\U0001F3D2", fetch_and_upsert_teams),
@@ -564,6 +784,7 @@ elif page_name == "Data Refresh":
             ("Games", "\U0001F3AE", lambda: fetch_and_upsert_games(season_arg)),
             ("Playoffs", "\U0001F3C6", lambda: fetch_and_upsert_playoffs(season_arg)),
             ("Player Stats", "\U0001F464", lambda: fetch_and_upsert_player_stats(season_arg)),
+            ("Ticket Prices", "\U0001F3AB", fetch_and_upsert_ticket_snapshots),
         ]
 
         bar = st.progress(0, text="Starting ETL pipeline...")

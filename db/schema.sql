@@ -144,3 +144,56 @@ CREATE POLICY "Allow all access to player_stats"
 
 GRANT ALL ON player_stats TO anon, authenticated, service_role;
 GRANT USAGE, SELECT ON SEQUENCE player_stats_id_seq TO anon, authenticated, service_role;
+
+-- ============================================================
+-- venues
+-- ============================================================
+CREATE TABLE IF NOT EXISTS venues (
+    id              serial PRIMARY KEY,
+    team_id         integer NOT NULL REFERENCES teams(id),
+    name            text,
+    city            text,
+    state           text,
+    capacity        integer,
+    UNIQUE (team_id)
+);
+
+ALTER TABLE venues ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all access to venues" ON venues;
+CREATE POLICY "Allow all access to venues"
+    ON venues FOR ALL
+    USING (true) WITH CHECK (true);
+
+GRANT ALL ON venues TO anon, authenticated, service_role;
+GRANT USAGE, SELECT ON SEQUENCE venues_id_seq TO anon, authenticated, service_role;
+
+-- ============================================================
+-- ticket_snapshots
+-- ============================================================
+CREATE TABLE IF NOT EXISTS ticket_snapshots (
+    id                  serial PRIMARY KEY,
+    seatgeek_event_id   integer NOT NULL,
+    game_date           date,
+    home_team_id        integer REFERENCES teams(id),
+    away_team_id        integer REFERENCES teams(id),
+    snapshot_date       date NOT NULL,
+    lowest_price        integer,
+    average_price       integer,
+    highest_price       integer,
+    listing_count       integer,
+    UNIQUE (seatgeek_event_id, snapshot_date)
+);
+
+ALTER TABLE ticket_snapshots ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all access to ticket_snapshots" ON ticket_snapshots;
+CREATE POLICY "Allow all access to ticket_snapshots"
+    ON ticket_snapshots FOR ALL
+    USING (true) WITH CHECK (true);
+
+GRANT ALL ON ticket_snapshots TO anon, authenticated, service_role;
+GRANT USAGE, SELECT ON SEQUENCE ticket_snapshots_id_seq TO anon, authenticated, service_role;
+
+-- ============================================================
+-- Add attendance column to games
+-- ============================================================
+ALTER TABLE games ADD COLUMN IF NOT EXISTS attendance integer;

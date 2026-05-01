@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: nhl-predictions-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: SEATGEEK_CLIENT_ID
+        sync: false
+      - key: CORS_ORIGIN
+        sync: false

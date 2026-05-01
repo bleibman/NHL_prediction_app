@@ -14,6 +14,7 @@ from etl.seasons import fetch_and_upsert_seasons
 from etl.games import fetch_and_upsert_games
 from etl.playoffs import fetch_and_upsert_playoffs
 from etl.player_stats import fetch_and_upsert_player_stats
+from etl.seatgeek import fetch_and_upsert_ticket_snapshots
 
 
 def main():
@@ -40,23 +41,26 @@ def main():
     logger.info("=== Starting ETL pipeline ===")
     logger.info("(Tables must already exist — run db/schema.sql in Supabase first)")
 
-    logger.info("Step 1/5: Teams")
+    logger.info("Step 1/6: Teams")
     fetch_and_upsert_teams()
 
-    logger.info("Step 2/5: Season stats")
+    logger.info("Step 2/6: Season stats")
     fetch_and_upsert_seasons(single_season=args.season)
 
     if not args.skip_games:
-        logger.info("Step 3/5: Games")
+        logger.info("Step 3/6: Games")
         fetch_and_upsert_games(single_season=args.season)
     else:
-        logger.info("Step 3/5: Games — SKIPPED")
+        logger.info("Step 3/6: Games — SKIPPED")
 
-    logger.info("Step 4/5: Playoffs")
+    logger.info("Step 4/6: Playoffs")
     fetch_and_upsert_playoffs(single_season=args.season)
 
-    logger.info("Step 5/5: Player stats")
+    logger.info("Step 5/6: Player stats")
     fetch_and_upsert_player_stats(single_season=args.season)
+
+    logger.info("Step 6/6: Ticket prices")
+    fetch_and_upsert_ticket_snapshots()
 
     logger.info("=== ETL pipeline complete ===")
 
