@@ -136,6 +136,13 @@ export interface DashboardInit {
   seasons: number[];
   divisions: string[];
   teams: string[];
+  team_divisions: Record<string, string>;
+}
+
+export interface HistoricalSeasonData {
+  standings: StandingRow[];
+  scorers: ScorerRow[];
+  playoffs: PlayoffSeriesRow[];
 }
 
 export interface RefreshEvent {

@@ -319,6 +319,7 @@ def get_spread(division: str | None = None, team: str | None = None):
         .reset_index()
     )
     team_spread["avg_spread"] = team_spread["avg_highest"] - team_spread["avg_lowest"]
+    team_spread = team_spread.dropna(subset=["avg_lowest", "avg_highest", "avg_spread"])
     team_spread = team_spread.sort_values("avg_spread", ascending=True)
 
     return [

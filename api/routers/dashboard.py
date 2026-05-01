@@ -205,6 +205,11 @@ def get_init():
     divisions = get_divisions()
     teams_full = _get_teams_full()
     teams = sorted(t["abbreviation"] for t in teams_full if t.get("abbreviation"))
+    team_divisions = {
+        t["abbreviation"]: t["division"]
+        for t in teams_full
+        if t.get("abbreviation") and t.get("division")
+    }
 
     result = DashboardInit(
         summary=summary,
@@ -213,6 +218,7 @@ def get_init():
         seasons=seasons,
         divisions=divisions,
         teams=teams,
+        team_divisions=team_divisions,
     )
     cache.set("dashboard_init", result)
     return result

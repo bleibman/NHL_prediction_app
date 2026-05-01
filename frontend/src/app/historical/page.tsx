@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { createColumnHelper } from "@tanstack/react-table";
 import PageHeader from "@/components/layout/PageHeader";
 import DataTable from "@/components/ui/DataTable";
@@ -11,6 +11,7 @@ import PlotlyChart from "@/components/charts/PlotlyChart";
 import { formatSeason } from "@/lib/utils";
 import {
   getHistoricalSeasons,
+  getHistoricalSeason,
   getHistoricalStandings,
   getHistoricalScorers,
   getHistoricalPlayoffs,
@@ -93,20 +94,29 @@ export default function HistoricalPage() {
     });
   }, []);
 
-  const loadTabData = useCallback(async () => {
-    if (!selectedSeason) return;
-    if (tab === "Team Stats") {
-      setStandings(await getHistoricalStandings(selectedSeason));
-    } else if (tab === "Top Scorers") {
-      setScorers(await getHistoricalScorers(selectedSeason));
-    } else if (tab === "Playoff Results") {
-      setPlayoffs(await getHistoricalPlayoffs(selectedSeason));
-    }
-  }, [selectedSeason, tab]);
-
+  // Load all tab data at once when season changes
   useEffect(() => {
-    loadTabData();
-  }, [loadTabData]);
+    if (!selectedSeason) return;
+
+    getHistoricalSeason(selectedSeason)
+      .then((data) => {
+        setStandings(data.standings);
+        setScorers(data.scorers);
+        setPlayoffs(data.playoffs);
+      })
+      .catch(() => {
+        // Fallback: load individually if consolidated endpoint fails
+        Promise.all([
+          getHistoricalStandings(selectedSeason),
+          getHistoricalScorers(selectedSeason),
+          getHistoricalPlayoffs(selectedSeason),
+        ]).then(([st, sc, pl]) => {
+          setStandings(st);
+          setScorers(sc);
+          setPlayoffs(pl);
+        });
+      });
+  }, [selectedSeason]);
 
   useEffect(() => {
     if (selectedTeam) {

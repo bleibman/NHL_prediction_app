@@ -145,6 +145,13 @@ class DashboardInit(BaseModel):
     seasons: list[int]
     divisions: list[str]
     teams: list[str]
+    team_divisions: dict[str, str]
+
+
+class HistoricalSeasonData(BaseModel):
+    standings: list[StandingRow]
+    scorers: list[ScorerRow]
+    playoffs: list[PlayoffSeriesRow]
 
 
 class RefreshRequest(BaseModel):

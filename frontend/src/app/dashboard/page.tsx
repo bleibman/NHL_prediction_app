@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { createColumnHelper } from "@tanstack/react-table";
 import PageHeader from "@/components/layout/PageHeader";
 import StatCard from "@/components/cards/StatCard";
@@ -51,41 +51,32 @@ type FilterMode = "all" | "division" | "team";
 
 export default function DashboardPage() {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
-  const [standings, setStandings] = useState<StandingRow[]>([]);
+  const [allStandings, setAllStandings] = useState<StandingRow[]>([]);
   const [scorers, setScorers] = useState<ScorerRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [standingsLoading, setStandingsLoading] = useState(false);
 
   // Filter state
   const [seasons, setSeasons] = useState<number[]>([]);
   const [divisions, setDivisions] = useState<string[]>([]);
   const [teams, setTeams] = useState<string[]>([]);
+  const [teamDivisions, setTeamDivisions] = useState<Record<string, string>>({});
   const [selectedSeason, setSelectedSeason] = useState<string>("");
   const [filterMode, setFilterMode] = useState<FilterMode>("all");
   const [selectedDivision, setSelectedDivision] = useState<string>("");
   const [selectedTeam, setSelectedTeam] = useState<string>("");
 
-  // Fetch standings with current filters
-  const fetchStandings = useCallback(async (
-    seasonId?: string,
-    mode?: FilterMode,
-    division?: string,
-    team?: string,
-  ) => {
-    setStandingsLoading(true);
-    try {
-      const params: { season_id?: number; division?: string; team?: string } = {};
-      if (seasonId) params.season_id = Number(seasonId);
-      if (mode === "division" && division) params.division = division;
-      if (mode === "team" && team) params.team = team;
-      const data = await getDashboardStandings(params);
-      setStandings(data);
-    } catch {
-      setStandings([]);
-    } finally {
-      setStandingsLoading(false);
+  const hasTeamDivisions = Object.keys(teamDivisions).length > 0;
+
+  // Client-side filtered standings
+  const filteredStandings = useMemo(() => {
+    if (filterMode === "division" && selectedDivision && hasTeamDivisions) {
+      return allStandings.filter((row) => teamDivisions[row.team] === selectedDivision);
     }
-  }, []);
+    if (filterMode === "team" && selectedTeam) {
+      return allStandings.filter((row) => row.team === selectedTeam);
+    }
+    return allStandings;
+  }, [allStandings, filterMode, selectedDivision, selectedTeam, teamDivisions, hasTeamDivisions]);
 
   // Initial load — try consolidated endpoint, fall back to individual calls
   useEffect(() => {
@@ -96,13 +87,15 @@ export default function DashboardPage() {
       seasons: number[];
       divisions: string[];
       teams: string[];
+      team_divisions?: Record<string, string>;
     }) => {
       setSummary(data.summary);
-      setStandings(data.standings);
+      setAllStandings(data.standings);
       setScorers(data.scorers);
       setSeasons(data.seasons);
       setDivisions(data.divisions);
       setTeams(data.teams);
+      if (data.team_divisions) setTeamDivisions(data.team_divisions);
       if (data.seasons.length > 0) setSelectedSeason(String(data.seasons[0]));
       if (data.divisions.length > 0) setSelectedDivision(data.divisions[0]);
       if (data.teams.length > 0) setSelectedTeam(data.teams[0]);
@@ -125,26 +118,39 @@ export default function DashboardPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  // Refetch standings when filters change (skip initial load)
-  const handleSeasonChange = (val: string) => {
+  // Season change: fetch full unfiltered standings for the new season
+  const handleSeasonChange = async (val: string) => {
     setSelectedSeason(val);
-    fetchStandings(val, filterMode, selectedDivision, selectedTeam);
+    try {
+      const data = await getDashboardStandings({ season_id: Number(val) });
+      setAllStandings(data);
+    } catch {
+      setAllStandings([]);
+    }
   };
 
   const handleFilterModeChange = (val: string) => {
-    const mode = val as FilterMode;
-    setFilterMode(mode);
-    fetchStandings(selectedSeason, mode, selectedDivision, selectedTeam);
+    setFilterMode(val as FilterMode);
   };
 
-  const handleDivisionChange = (val: string) => {
+  const handleDivisionChange = async (val: string) => {
     setSelectedDivision(val);
-    fetchStandings(selectedSeason, "division", val, selectedTeam);
+    // Fallback: if team_divisions mapping is unavailable, fetch from API
+    if (!hasTeamDivisions) {
+      try {
+        const data = await getDashboardStandings({
+          season_id: Number(selectedSeason),
+          division: val,
+        });
+        setAllStandings(data);
+      } catch {
+        // keep current standings
+      }
+    }
   };
 
   const handleTeamChange = (val: string) => {
     setSelectedTeam(val);
-    fetchStandings(selectedSeason, "team", selectedDivision, val);
   };
 
   if (loading) {
@@ -221,12 +227,8 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {standingsLoading ? (
-        <div className="flex items-center justify-center h-32">
-          <div className="animate-spin h-6 w-6 border-2 border-primary border-t-transparent rounded-full" />
-        </div>
-      ) : standings.length > 0 ? (
-        <DataTable columns={standingColumns} data={standings} />
+      {filteredStandings.length > 0 ? (
+        <DataTable columns={standingColumns} data={filteredStandings} />
       ) : (
         <p className="text-text-muted text-sm py-8 text-center">No standings data available for this selection.</p>
       )}

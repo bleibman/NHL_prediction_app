@@ -15,6 +15,7 @@ import type {
   PriceAttendancePoint,
   PriceSpreadPoint,
   TicketFilterOptions,
+  HistoricalSeasonData,
 } from "./types";
 
 const BASE = process.env.NEXT_PUBLIC_API_URL || "";
@@ -86,6 +87,9 @@ export const getHistoricalScorers = (seasonId: number, limit = 50) =>
 
 export const getHistoricalPlayoffs = (seasonId: number) =>
   fetchJson<PlayoffSeriesRow[]>(`/api/historical/playoffs/${seasonId}`);
+
+export const getHistoricalSeason = (seasonId: number) =>
+  fetchJson<HistoricalSeasonData>(`/api/historical/season/${seasonId}`);
 
 export const getTeamTrend = (teamAbbrev: string) =>
   fetchJson<TeamTrendPoint[]>(`/api/historical/team-trend/${teamAbbrev}`);
