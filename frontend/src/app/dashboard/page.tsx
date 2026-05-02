@@ -16,6 +16,8 @@ import {
   getTeams,
 } from "@/lib/api";
 import { formatSeason } from "@/lib/utils";
+import { downloadCSV } from "@/lib/csv";
+import ExportButton from "@/components/ui/ExportButton";
 import type { DashboardSummary, StandingRow, ScorerRow } from "@/lib/types";
 
 const standingCol = createColumnHelper<StandingRow>();
@@ -161,6 +163,45 @@ export default function DashboardPage() {
     );
   }
 
+  const seasonLabel = selectedSeason ? formatSeason(Number(selectedSeason)) : "";
+
+  const exportStandings = () =>
+    downloadCSV(
+      filteredStandings,
+      [
+        { key: "team", header: "Team" },
+        { key: "gp", header: "GP" },
+        { key: "w", header: "W" },
+        { key: "l", header: "L" },
+        { key: "otl", header: "OTL" },
+        { key: "pts", header: "PTS" },
+        { key: "pts_pct", header: "PTS%" },
+        { key: "gf", header: "GF" },
+        { key: "ga", header: "GA" },
+        { key: "pp_pct", header: "PP%" },
+        { key: "pk_pct", header: "PK%" },
+        { key: "fo_pct", header: "FO%" },
+        { key: "sf_pg", header: "SF/G" },
+        { key: "sa_pg", header: "SA/G" },
+      ],
+      `standings_${seasonLabel}.csv`
+    );
+
+  const exportScorers = () =>
+    downloadCSV(
+      scorers,
+      [
+        { key: "player_name", header: "Player" },
+        { key: "team", header: "Team" },
+        { key: "position", header: "Pos" },
+        { key: "gp", header: "GP" },
+        { key: "goals", header: "G" },
+        { key: "assists", header: "A" },
+        { key: "points", header: "PTS" },
+      ],
+      `top_scorers_${seasonLabel}.csv`
+    );
+
   const seasonOptions = seasons.map((s) => ({
     value: String(s),
     label: formatSeason(s),
@@ -196,7 +237,10 @@ export default function DashboardPage() {
       )}
 
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-bold text-text-bright">Standings</h2>
+        <div className="flex items-center gap-3">
+          <h2 className="text-lg font-bold text-text-bright">Standings</h2>
+          <ExportButton onClick={exportStandings} />
+        </div>
         <div className="flex items-center gap-3">
           {seasonOptions.length > 0 && (
             <Select
@@ -235,7 +279,10 @@ export default function DashboardPage() {
 
       <hr className="border-border my-8" />
 
-      <h2 className="text-lg font-bold text-text-bright mb-4">Top 10 Scorers</h2>
+      <div className="flex items-center gap-3 mb-4">
+        <h2 className="text-lg font-bold text-text-bright">Top 10 Scorers</h2>
+        <ExportButton onClick={exportScorers} />
+      </div>
       <DataTable columns={scorerColumns} data={scorers} />
     </>
   );

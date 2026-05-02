@@ -9,6 +9,8 @@ import Tabs from "@/components/ui/Tabs";
 import HighlightCard from "@/components/cards/HighlightCard";
 import PlotlyChart from "@/components/charts/PlotlyChart";
 import { formatSeason } from "@/lib/utils";
+import { downloadCSV } from "@/lib/csv";
+import ExportButton from "@/components/ui/ExportButton";
 import {
   getHistoricalSeasons,
   getHistoricalSeason,
@@ -132,6 +134,58 @@ export default function HistoricalPage() {
     );
   }
 
+  const seasonLabel = selectedSeason ? formatSeason(selectedSeason) : "";
+
+  const exportStandings = () =>
+    downloadCSV(
+      standings,
+      [
+        { key: "team", header: "Team" },
+        { key: "gp", header: "GP" },
+        { key: "w", header: "W" },
+        { key: "l", header: "L" },
+        { key: "otl", header: "OTL" },
+        { key: "pts", header: "PTS" },
+        { key: "pts_pct", header: "PTS%" },
+        { key: "gf", header: "GF" },
+        { key: "ga", header: "GA" },
+        { key: "pp_pct", header: "PP%" },
+        { key: "pk_pct", header: "PK%" },
+        { key: "fo_pct", header: "FO%" },
+        { key: "sf_pg", header: "SF/G" },
+        { key: "sa_pg", header: "SA/G" },
+      ],
+      `standings_${seasonLabel}.csv`
+    );
+
+  const exportScorers = () =>
+    downloadCSV(
+      scorers,
+      [
+        { key: "player_name", header: "Player" },
+        { key: "team", header: "Team" },
+        { key: "position", header: "Pos" },
+        { key: "gp", header: "GP" },
+        { key: "goals", header: "G" },
+        { key: "assists", header: "A" },
+        { key: "points", header: "PTS" },
+        { key: "plus_minus", header: "+/-" },
+      ],
+      `scorers_${seasonLabel}.csv`
+    );
+
+  const exportPlayoffs = () =>
+    downloadCSV(
+      playoffs,
+      [
+        { key: "round_name", header: "Round" },
+        { key: "matchup", header: "Matchup" },
+        { key: "score", header: "Score" },
+        { key: "winner", header: "Winner" },
+      ],
+      `playoffs_${seasonLabel}.csv`
+    );
+
   const champion = playoffs.find((p) => p.round_name === "Stanley Cup Final");
   const trendY = trendData.map((d) => d[metric as keyof TeamTrendPoint] as number);
   const trendX = trendData.map((d) => d.season_display);
@@ -150,12 +204,29 @@ export default function HistoricalPage() {
 
       <Tabs tabs={["Team Stats", "Top Scorers", "Playoff Results"]} activeTab={tab} onChange={setTab} />
 
-      {tab === "Team Stats" && <DataTable columns={standingColumns} data={standings} />}
+      {tab === "Team Stats" && (
+        <>
+          <div className="flex items-center gap-3 mb-4 mt-4">
+            <ExportButton onClick={exportStandings} />
+          </div>
+          <DataTable columns={standingColumns} data={standings} />
+        </>
+      )}
 
-      {tab === "Top Scorers" && <DataTable columns={scorerColumns} data={scorers} />}
+      {tab === "Top Scorers" && (
+        <>
+          <div className="flex items-center gap-3 mb-4 mt-4">
+            <ExportButton onClick={exportScorers} />
+          </div>
+          <DataTable columns={scorerColumns} data={scorers} />
+        </>
+      )}
 
       {tab === "Playoff Results" && (
         <>
+          <div className="flex items-center gap-3 mb-4 mt-4">
+            <ExportButton onClick={exportPlayoffs} />
+          </div>
           <DataTable columns={playoffColumns} data={playoffs} sortable={false} />
           {champion?.winner && (
             <HighlightCard label="Stanley Cup Champion" icon="\uD83C\uDFC6" title={champion.winner} />
