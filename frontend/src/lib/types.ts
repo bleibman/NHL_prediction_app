@@ -129,6 +129,46 @@ export interface TicketFilterOptions {
   teams: string[];
 }
 
+export interface PerformancePricePoint {
+  team: string;
+  win_pct: number;
+  goals_per_game: number;
+  shots_per_game: number;
+  avg_ticket_price: number;
+}
+
+export interface AttendanceOverviewPoint {
+  season_id: number;
+  season_display: string;
+  division: string;
+  avg_attendance: number;
+  games_count: number;
+}
+
+export interface AdvancedAttendancePoint {
+  team: string;
+  corsi_pct: number;
+  x_goals_pct: number;
+  fenwick_pct: number;
+  avg_attendance: number;
+}
+
+export interface TicketsInit {
+  summary: TicketSummary;
+  upcoming: UpcomingGame[];
+  price_trends: PriceTrendPoint[];
+  team_trends: TeamPriceTrendPoint[];
+  team_prices: TeamPrice[];
+  spread: PriceSpreadPoint[];
+  correlation: PriceAttendancePoint[];
+  attendance_teams: string[];
+  filter_options: TicketFilterOptions;
+  team_divisions: Record<string, string>;
+  performance_price: PerformancePricePoint[];
+  attendance_overview: AttendanceOverviewPoint[];
+  advanced_attendance: AdvancedAttendancePoint[];
+}
+
 export interface DashboardInit {
   summary: DashboardSummary;
   standings: StandingRow[];

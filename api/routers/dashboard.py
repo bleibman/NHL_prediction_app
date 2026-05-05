@@ -1,5 +1,7 @@
 """Dashboard API endpoints."""
 
+import asyncio
+
 from fastapi import APIRouter
 
 from db.supabase import select, rpc
@@ -192,18 +194,20 @@ def get_top_scorers(limit: int = 10):
 
 
 @router.get("/init", response_model=DashboardInit)
-def get_init():
+async def get_init():
     """Return all data the dashboard needs in a single round-trip."""
     cached = cache.get("dashboard_init")
     if cached is not None:
         return cached
 
-    summary = get_summary()
-    standings = get_standings()
-    scorers = get_top_scorers()
-    seasons = get_seasons()
-    divisions = get_divisions()
-    teams_full = _get_teams_full()
+    summary, standings, scorers, seasons, divisions = await asyncio.gather(
+        asyncio.to_thread(get_summary),
+        asyncio.to_thread(get_standings),
+        asyncio.to_thread(get_top_scorers),
+        asyncio.to_thread(get_seasons),
+        asyncio.to_thread(get_divisions),
+    )
+    teams_full = _get_teams_full()  # already cached by get_divisions()
     teams = sorted(t["abbreviation"] for t in teams_full if t.get("abbreviation"))
     team_divisions = {
         t["abbreviation"]: t["division"]

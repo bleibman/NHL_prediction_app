@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { createColumnHelper } from "@tanstack/react-table";
 import PageHeader from "@/components/layout/PageHeader";
 import StatCard from "@/components/cards/StatCard";
@@ -9,6 +9,7 @@ import DataTable from "@/components/ui/DataTable";
 import Select from "@/components/ui/Select";
 import PlotlyChart from "@/components/charts/PlotlyChart";
 import {
+  getTicketsInit,
   getTicketSummary,
   getUpcomingGames,
   getPriceTrends,
@@ -29,6 +30,9 @@ import type {
   TeamPriceTrendPoint,
   PriceAttendancePoint,
   PriceSpreadPoint,
+  PerformancePricePoint,
+  AttendanceOverviewPoint,
+  AdvancedAttendancePoint,
 } from "@/lib/types";
 
 const gameCol = createColumnHelper<UpcomingGame>();
@@ -76,18 +80,26 @@ const TEAM_COLORS = [
 ];
 
 export default function TicketsPage() {
-  const [summary, setSummary] = useState<TicketSummary | null>(null);
-  const [upcoming, setUpcoming] = useState<UpcomingGame[]>([]);
-  const [trends, setTrends] = useState<PriceTrendPoint[]>([]);
-  const [teamTrends, setTeamTrends] = useState<TeamPriceTrendPoint[]>([]);
-  const [teamPrices, setTeamPrices] = useState<TeamPrice[]>([]);
-  const [spreadData, setSpreadData] = useState<PriceSpreadPoint[]>([]);
+  // Full unfiltered data from /init
+  const [allUpcoming, setAllUpcoming] = useState<UpcomingGame[]>([]);
+  const [allTeamPrices, setAllTeamPrices] = useState<TeamPrice[]>([]);
+  const [allSpread, setAllSpread] = useState<PriceSpreadPoint[]>([]);
+  const [allTeamTrends, setAllTeamTrends] = useState<TeamPriceTrendPoint[]>([]);
+  const [allPriceTrends, setAllPriceTrends] = useState<PriceTrendPoint[]>([]);
   const [correlation, setCorrelation] = useState<PriceAttendancePoint[]>([]);
   const [attTeams, setAttTeams] = useState<string[]>([]);
+  const [teamDivisions, setTeamDivisions] = useState<Record<string, string>>({});
+
+  // New Kaggle-derived data
+  const [performancePrice, setPerformancePrice] = useState<PerformancePricePoint[]>([]);
+  const [attendanceOverview, setAttendanceOverview] = useState<AttendanceOverviewPoint[]>([]);
+  const [advancedAttendance, setAdvancedAttendance] = useState<AdvancedAttendancePoint[]>([]);
+
+  // Attendance (separate call per team)
   const [selectedAttTeam, setSelectedAttTeam] = useState("");
   const [attendance, setAttendance] = useState<AttendancePoint[]>([]);
+
   const [loading, setLoading] = useState(true);
-  const [dataLoading, setDataLoading] = useState(false);
 
   // Filter state
   const [divisions, setDivisions] = useState<string[]>([]);
@@ -96,98 +108,150 @@ export default function TicketsPage() {
   const [selectedDivision, setSelectedDivision] = useState("");
   const [selectedTeam, setSelectedTeam] = useState("");
 
-  const getFilterParams = useCallback(
-    (mode?: FilterMode, div?: string, tm?: string) => {
-      const m = mode ?? filterMode;
-      const d = div ?? selectedDivision;
-      const t = tm ?? selectedTeam;
-      const params: { division?: string; team?: string } = {};
-      if (m === "division" && d) params.division = d;
-      if (m === "team" && t) params.team = t;
-      return params;
-    },
-    [filterMode, selectedDivision, selectedTeam]
-  );
-
-  const fetchFilteredData = useCallback(
-    async (mode?: FilterMode, div?: string, tm?: string) => {
-      setDataLoading(true);
-      const params = getFilterParams(mode, div, tm);
-      try {
-        const [s, u, t, tt, tp, sp] = await Promise.all([
-          getTicketSummary(params),
-          getUpcomingGames(params),
-          getPriceTrends(params),
-          getPriceTrendsByTeam(params),
-          getTeamPrices({ division: params.division }),
-          getPriceSpread(params),
-        ]);
-        setSummary(s);
-        setUpcoming(u);
-        setTrends(t);
-        setTeamTrends(tt);
-        setTeamPrices(tp);
-        setSpreadData(sp);
-      } catch {
-        // keep existing data
-      } finally {
-        setDataLoading(false);
-      }
-    },
-    [getFilterParams]
-  );
-
-  // Initial load
+  // Initial load — single API call with fallback
   useEffect(() => {
-    Promise.all([
-      getTicketSummary(),
-      getUpcomingGames(),
-      getPriceTrends(),
-      getPriceTrendsByTeam(),
-      getTeamPrices(),
-      getPriceSpread(),
-      getPriceAttendanceCorrelation(),
-      getAttendanceTeams(),
-      getTicketFilterOptions(),
-    ])
-      .then(([s, u, t, tt, tp, sp, corr, at, fo]) => {
-        setSummary(s);
-        setUpcoming(u);
-        setTrends(t);
-        setTeamTrends(tt);
-        setTeamPrices(tp);
-        setSpreadData(sp);
-        setCorrelation(corr);
-        setAttTeams(at);
-        setDivisions(fo.divisions);
-        setTeams(fo.teams);
-        if (fo.divisions.length > 0) setSelectedDivision(fo.divisions[0]);
-        if (fo.teams.length > 0) setSelectedTeam(fo.teams[0]);
-        if (at.length > 0) setSelectedAttTeam(at[0]);
+    getTicketsInit()
+      .then((data) => {
+        setAllUpcoming(data.upcoming);
+        setAllTeamPrices(data.team_prices);
+        setAllSpread(data.spread);
+        setAllTeamTrends(data.team_trends);
+        setAllPriceTrends(data.price_trends);
+        setCorrelation(data.correlation);
+        setAttTeams(data.attendance_teams);
+        setTeamDivisions(data.team_divisions);
+        setDivisions(data.filter_options.divisions);
+        setTeams(data.filter_options.teams);
+        setPerformancePrice(data.performance_price ?? []);
+        setAttendanceOverview(data.attendance_overview ?? []);
+        setAdvancedAttendance(data.advanced_attendance ?? []);
+        if (data.filter_options.divisions.length > 0)
+          setSelectedDivision(data.filter_options.divisions[0]);
+        if (data.filter_options.teams.length > 0)
+          setSelectedTeam(data.filter_options.teams[0]);
+        if (data.attendance_teams.length > 0)
+          setSelectedAttTeam(data.attendance_teams[0]);
+      })
+      .catch(() => {
+        // Fallback to individual calls
+        Promise.all([
+          getUpcomingGames(),
+          getTeamPrices(),
+          getPriceSpread(),
+          getPriceTrendsByTeam(),
+          getPriceTrends(),
+          getPriceAttendanceCorrelation(),
+          getAttendanceTeams(),
+          getTicketFilterOptions(),
+        ]).then(([u, tp, sp, tt, pt, corr, at, fo]) => {
+          setAllUpcoming(u);
+          setAllTeamPrices(tp);
+          setAllSpread(sp);
+          setAllTeamTrends(tt);
+          setAllPriceTrends(pt);
+          setCorrelation(corr);
+          setAttTeams(at);
+          setDivisions(fo.divisions);
+          setTeams(fo.teams);
+          if (fo.divisions.length > 0) setSelectedDivision(fo.divisions[0]);
+          if (fo.teams.length > 0) setSelectedTeam(fo.teams[0]);
+          if (at.length > 0) setSelectedAttTeam(at[0]);
+        });
       })
       .finally(() => setLoading(false));
   }, []);
 
+  // Attendance per team (separate small call)
   useEffect(() => {
     if (selectedAttTeam) {
       getAttendance({ team_abbrev: selectedAttTeam }).then(setAttendance);
     }
   }, [selectedAttTeam]);
 
+  // ── Client-side filtering via useMemo ──
+
+  const allowedTeams = useMemo(() => {
+    if (filterMode === "team" && selectedTeam) return new Set([selectedTeam]);
+    if (filterMode === "division" && selectedDivision) {
+      return new Set(
+        Object.entries(teamDivisions)
+          .filter(([, div]) => div === selectedDivision)
+          .map(([abbr]) => abbr)
+      );
+    }
+    return null; // no filter
+  }, [filterMode, selectedDivision, selectedTeam, teamDivisions]);
+
+  const upcoming = useMemo(() => {
+    if (!allowedTeams) return allUpcoming;
+    return allUpcoming.filter((g) => allowedTeams.has(g.home_team));
+  }, [allUpcoming, allowedTeams]);
+
+  const summary: TicketSummary | null = useMemo(() => {
+    if (allUpcoming.length === 0) return null;
+    const games = upcoming;
+    if (games.length === 0) {
+      return {
+        avg_price: null,
+        lowest_price: null,
+        highest_price: null,
+        avg_spread: null,
+        total_listings: null,
+        games_tracked: 0,
+        snapshot_date: null,
+      };
+    }
+    const prices = games.filter((g) => g.avg_price != null).map((g) => g.avg_price!);
+    const lows = games.filter((g) => g.low_price != null).map((g) => g.low_price!);
+    const highs = games.filter((g) => g.high_price != null).map((g) => g.high_price!);
+    const spreads = games.filter((g) => g.spread != null).map((g) => g.spread!);
+    const listings = games.filter((g) => g.listings != null).map((g) => g.listings!);
+
+    return {
+      avg_price: prices.length > 0 ? Math.round(prices.reduce((a, b) => a + b, 0) / prices.length) : null,
+      lowest_price: lows.length > 0 ? Math.min(...lows) : null,
+      highest_price: highs.length > 0 ? Math.max(...highs) : null,
+      avg_spread: spreads.length > 0 ? Math.round(spreads.reduce((a, b) => a + b, 0) / spreads.length) : null,
+      total_listings: listings.length > 0 ? listings.reduce((a, b) => a + b, 0) : null,
+      games_tracked: games.length,
+      snapshot_date: null,
+    };
+  }, [upcoming, allUpcoming.length]);
+
+  const teamPrices = useMemo(() => {
+    if (!allowedTeams) return allTeamPrices;
+    return allTeamPrices.filter((tp) => allowedTeams.has(tp.team));
+  }, [allTeamPrices, allowedTeams]);
+
+  const spreadData = useMemo(() => {
+    if (!allowedTeams) return allSpread;
+    return allSpread.filter((s) => allowedTeams.has(s.team));
+  }, [allSpread, allowedTeams]);
+
+  const teamTrends = useMemo(() => {
+    if (!allowedTeams) return allTeamTrends;
+    return allTeamTrends.filter((t) => allowedTeams.has(t.team));
+  }, [allTeamTrends, allowedTeams]);
+
+  const trends = useMemo(() => {
+    if (!allowedTeams) return allPriceTrends;
+    // Recompute from filtered upcoming data — group by approximated days_until_game
+    // Since we don't have days_until_game in upcoming, use the unfiltered price trends as league average
+    return allPriceTrends;
+  }, [allPriceTrends, allowedTeams]);
+
+  // ── Filter handlers (instant, no network) ──
+
   const handleFilterModeChange = (val: string) => {
-    const mode = val as FilterMode;
-    setFilterMode(mode);
-    fetchFilteredData(mode, selectedDivision, selectedTeam);
+    setFilterMode(val as FilterMode);
   };
 
   const handleDivisionChange = (val: string) => {
     setSelectedDivision(val);
-    fetchFilteredData("division", val, selectedTeam);
   };
 
   const handleTeamChange = (val: string) => {
     setSelectedTeam(val);
-    fetchFilteredData("team", selectedDivision, val);
   };
 
   if (loading) {
@@ -281,9 +345,6 @@ export default function TicketsPage() {
             value={selectedTeam}
             onChange={handleTeamChange}
           />
-        )}
-        {dataLoading && (
-          <div className="animate-spin h-5 w-5 border-2 border-primary border-t-transparent rounded-full" />
         )}
       </div>
 
@@ -438,6 +499,51 @@ export default function TicketsPage() {
 
           <hr className="border-border my-8" />
 
+          {/* Performance vs Ticket Price */}
+          <h2 className="text-lg font-bold text-text-bright mb-4">Performance vs Ticket Price</h2>
+          {performancePrice.length > 0 ? (
+            <PlotlyChart
+              data={[
+                {
+                  x: performancePrice.map((p) => p.avg_ticket_price),
+                  y: performancePrice.map((p) => p.win_pct),
+                  text: performancePrice.map((p) => p.team),
+                  type: "scatter",
+                  mode: "markers+text",
+                  textposition: "top center",
+                  textfont: { color: "#c9d1d9", size: 10 },
+                  marker: {
+                    color: "#1f6feb",
+                    size: performancePrice.map((p) => Math.max(p.goals_per_game * 10, 8)),
+                    opacity: 0.8,
+                  },
+                  hovertemplate: performancePrice.map(
+                    (p) =>
+                      `<b>${p.team}</b><br>Win%: ${(p.win_pct * 100).toFixed(1)}%<br>Goals/Game: ${p.goals_per_game}<br>Shots/Game: ${p.shots_per_game}<br>Avg Price: $${Math.round(p.avg_ticket_price)}<extra></extra>`
+                  ),
+                },
+              ]}
+              layout={{
+                xaxis: {
+                  title: "Average Ticket Price ($)",
+                  gridcolor: "#21262d",
+                  zerolinecolor: "#21262d",
+                },
+                yaxis: {
+                  title: "Win Percentage",
+                  gridcolor: "#21262d",
+                  zerolinecolor: "#21262d",
+                  tickformat: ".0%",
+                },
+                showlegend: false,
+              }}
+            />
+          ) : (
+            <InfoBox text="No performance-price data available. Requires both game_team_stats (Kaggle import) and ticket snapshot data." />
+          )}
+
+          <hr className="border-border my-8" />
+
           {/* Price vs Attendance Correlation */}
           <h2 className="text-lg font-bold text-text-bright mb-4">
             Price vs Attendance (Capacity Utilization)
@@ -488,8 +594,51 @@ export default function TicketsPage() {
 
       <hr className="border-border my-8" />
 
-      {/* Historical Attendance */}
-      <h2 className="text-lg font-bold text-text-bright mb-4">Historical Attendance</h2>
+      {/* League Attendance Trends */}
+      <h2 className="text-lg font-bold text-text-bright mb-4">League Attendance Trends</h2>
+      {attendanceOverview.length > 0 ? (
+        <PlotlyChart
+          data={(() => {
+            const byDiv = new Map<string, AttendanceOverviewPoint[]>();
+            for (const pt of attendanceOverview) {
+              const arr = byDiv.get(pt.division) ?? [];
+              arr.push(pt);
+              byDiv.set(pt.division, arr);
+            }
+            return Array.from(byDiv.entries()).map(([div, points], i) => {
+              const sorted = points.sort((a, b) => a.season_id - b.season_id);
+              return {
+                x: sorted.map((p) => p.season_display),
+                y: sorted.map((p) => p.avg_attendance),
+                type: "scatter" as const,
+                mode: "lines+markers" as const,
+                name: div,
+                marker: { color: TEAM_COLORS[i % TEAM_COLORS.length], size: 6 },
+                line: { color: TEAM_COLORS[i % TEAM_COLORS.length], width: 2 },
+                hovertemplate: sorted.map(
+                  (p) =>
+                    `<b>${div}</b><br>${p.season_display}<br>Avg: ${Math.round(p.avg_attendance).toLocaleString()}<br>Games: ${p.games_count}<extra></extra>`
+                ),
+              };
+            });
+          })()}
+          layout={{
+            xaxis: { title: "Season", gridcolor: "#21262d", zerolinecolor: "#21262d" },
+            yaxis: {
+              title: "Average Attendance",
+              gridcolor: "#21262d",
+              zerolinecolor: "#21262d",
+            },
+            showlegend: true,
+            legend: { font: { color: "#c9d1d9" } },
+          }}
+        />
+      ) : (
+        <InfoBox text="No attendance overview data available. Requires games with attendance data." />
+      )}
+
+      {/* Per-Team Attendance */}
+      <h3 className="text-md font-bold text-text-bright mt-6 mb-4">Team Attendance History</h3>
       {attTeams.length > 0 ? (
         <>
           <div className="mb-4">
@@ -525,6 +674,61 @@ export default function TicketsPage() {
         </>
       ) : (
         <InfoBox text="No attendance data imported yet. Download the Kaggle NHL Games CSV and run: python scripts/import_attendance.py data/nhl_games.csv" />
+      )}
+
+      <hr className="border-border my-8" />
+
+      {/* Advanced Metrics & Attendance */}
+      <h2 className="text-lg font-bold text-text-bright mb-4">Expected Goals vs Attendance</h2>
+      {advancedAttendance.length > 0 ? (
+        <PlotlyChart
+          data={[
+            {
+              x: advancedAttendance.map((a) => a.x_goals_pct),
+              y: advancedAttendance.map((a) => a.avg_attendance),
+              text: advancedAttendance.map((a) => a.team),
+              type: "scatter",
+              mode: "markers+text",
+              textposition: "top center",
+              textfont: { color: "#c9d1d9", size: 10 },
+              marker: {
+                color: advancedAttendance.map((a) => a.corsi_pct),
+                colorscale: [
+                  [0, "#da3633"],
+                  [0.5, "#1f6feb"],
+                  [1, "#58a6ff"],
+                ],
+                size: advancedAttendance.map((a) => Math.max((a.fenwick_pct - 46) * 4, 6)),
+                opacity: 0.85,
+                colorbar: {
+                  title: { text: "Corsi%", font: { color: "#c9d1d9" } },
+                  tickfont: { color: "#c9d1d9" },
+                  ticksuffix: "%",
+                },
+              },
+              hovertemplate: advancedAttendance.map(
+                (a) =>
+                  `<b>${a.team}</b><br>xGoals%: ${a.x_goals_pct.toFixed(1)}%<br>Corsi%: ${a.corsi_pct.toFixed(1)}%<br>Fenwick%: ${a.fenwick_pct.toFixed(1)}%<br>Avg Attendance: ${Math.round(a.avg_attendance).toLocaleString()}<extra></extra>`
+              ),
+            },
+          ]}
+          layout={{
+            xaxis: {
+              title: "Expected Goals % (Team Quality)",
+              gridcolor: "#21262d",
+              zerolinecolor: "#21262d",
+              ticksuffix: "%",
+            },
+            yaxis: {
+              title: "Average Attendance",
+              gridcolor: "#21262d",
+              zerolinecolor: "#21262d",
+            },
+            showlegend: false,
+          }}
+        />
+      ) : (
+        <InfoBox text="No advanced metrics data available. Requires game_advanced_stats (Kaggle import) and games with attendance data." />
       )}
     </>
   );

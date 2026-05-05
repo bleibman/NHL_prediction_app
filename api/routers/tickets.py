@@ -1,5 +1,7 @@
 """Ticket analytics API endpoints."""
 
+import asyncio
+
 from fastapi import APIRouter
 
 import pandas as pd
@@ -15,6 +17,10 @@ from api.schemas import (
     PriceAttendancePoint,
     PriceSpreadPoint,
     TicketFilterOptions,
+    TicketsInit,
+    PerformancePricePoint,
+    AttendanceOverviewPoint,
+    AdvancedAttendancePoint,
 )
 from api import cache
 
@@ -78,6 +84,57 @@ def _filter_by_team_context(
         allowed = {t["id"] for t in teams_full if t.get("division") == division}
         return df[df["home_team_id"].isin(allowed)]
     return df
+
+
+@router.get("/init", response_model=TicketsInit)
+async def get_tickets_init():
+    cached = cache.get("tickets_init")
+    if cached is not None:
+        return cached
+
+    (
+        summary, upcoming, price_trends, team_trends,
+        team_prices, spread, correlation, attendance_teams,
+        filter_options, perf_price, att_overview, adv_att,
+    ) = await asyncio.gather(
+        asyncio.to_thread(get_summary),
+        asyncio.to_thread(get_upcoming),
+        asyncio.to_thread(get_price_trends),
+        asyncio.to_thread(get_price_trends_by_team),
+        asyncio.to_thread(get_team_prices),
+        asyncio.to_thread(get_spread),
+        asyncio.to_thread(get_price_attendance_correlation),
+        asyncio.to_thread(get_attendance_teams),
+        asyncio.to_thread(get_filter_options),
+        asyncio.to_thread(get_performance_price),
+        asyncio.to_thread(get_attendance_overview),
+        asyncio.to_thread(get_advanced_attendance),
+    )
+
+    teams_full = _get_teams_full()  # already cached by get_filter_options()
+    team_divisions = {
+        t["abbreviation"]: t["division"]
+        for t in teams_full
+        if t.get("abbreviation") and t.get("division")
+    }
+
+    result = TicketsInit(
+        summary=summary,
+        upcoming=upcoming,
+        price_trends=price_trends,
+        team_trends=team_trends,
+        team_prices=team_prices,
+        spread=spread,
+        correlation=correlation,
+        attendance_teams=attendance_teams,
+        filter_options=filter_options,
+        team_divisions=team_divisions,
+        performance_price=perf_price,
+        attendance_overview=att_overview,
+        advanced_attendance=adv_att,
+    )
+    cache.set("tickets_init", result, ttl=900)
+    return result
 
 
 @router.get("/filter-options", response_model=TicketFilterOptions)
@@ -187,6 +244,7 @@ def get_price_trends(division: str | None = None, team: str | None = None):
     if snap_df.empty or snap_df["snapshot_date"].nunique() < 2:
         return []
 
+    snap_df = snap_df.dropna(subset=["average_price"])
     snap_df["game_date"] = pd.to_datetime(snap_df["game_date"])
     snap_df["snapshot_date"] = pd.to_datetime(snap_df["snapshot_date"])
     snap_df["days_until_game"] = (snap_df["game_date"] - snap_df["snapshot_date"]).dt.days
@@ -225,6 +283,7 @@ def get_price_trends_by_team(division: str | None = None, team: str | None = Non
     if snap_df.empty or snap_df["snapshot_date"].nunique() < 2:
         return []
 
+    snap_df = snap_df.dropna(subset=["average_price"])
     snap_df["game_date"] = pd.to_datetime(snap_df["game_date"])
     snap_df["snapshot_date"] = pd.to_datetime(snap_df["snapshot_date"])
     snap_df["days_until_game"] = (snap_df["game_date"] - snap_df["snapshot_date"]).dt.days
@@ -342,7 +401,10 @@ def get_price_attendance_correlation():
 
     snap_df = pd.DataFrame(snapshots)
     snap_df["team"] = snap_df["home_team_id"].map(teams_map)
-    snap_df = snap_df.dropna(subset=["team"])
+    snap_df = snap_df.dropna(subset=["team", "average_price"])
+
+    if snap_df.empty:
+        return []
 
     avg_prices = (
         snap_df.groupby(["home_team_id", "team"])["average_price"]
@@ -369,6 +431,7 @@ def get_price_attendance_correlation():
     venues_map = _load_venues()
 
     merged = avg_prices.merge(avg_att, on="home_team_id", how="inner")
+    merged = merged.dropna(subset=["average_price", "attendance"])
 
     result = []
     for _, row in merged.iterrows():
@@ -464,4 +527,183 @@ def get_attendance_teams():
     att_df["team"] = att_df["home_team_id"].map(teams_map)
     result = sorted(att_df["team"].dropna().unique().tolist())
     cache.set("attendance_teams", result)
+    return result
+
+
+@router.get("/performance-price", response_model=list[PerformancePricePoint])
+def get_performance_price():
+    cached = cache.get("performance_price")
+    if cached is not None:
+        return cached
+
+    try:
+        stats = select("game_team_stats", columns="team_id,won,goals,shots")
+    except Exception:
+        return []
+    if not stats:
+        return []
+
+    teams_list = select("teams", columns="id,abbreviation")
+    teams_map = {t["id"]: t["abbreviation"] for t in teams_list}
+
+    df = pd.DataFrame(stats)
+    df = df.dropna(subset=["won", "goals", "shots"])
+    if df.empty:
+        return []
+
+    agg = (
+        df.groupby("team_id")
+        .agg(
+            total_games=("won", "count"),
+            wins=("won", "sum"),
+            avg_goals=("goals", "mean"),
+            avg_shots=("shots", "mean"),
+        )
+        .reset_index()
+    )
+    agg = agg[agg["total_games"] > 0]
+    agg["win_pct"] = agg["wins"] / agg["total_games"]
+    agg["team"] = agg["team_id"].map(teams_map)
+    agg = agg.dropna(subset=["team", "win_pct", "avg_goals", "avg_shots"])
+
+    # Get avg ticket prices per team
+    snapshots, snap_teams_map = _load_snapshots()
+    if not snapshots:
+        return []
+
+    snap_df = pd.DataFrame(snapshots)
+    snap_df["team"] = snap_df["home_team_id"].map(snap_teams_map)
+    snap_df = snap_df.dropna(subset=["team", "average_price"])
+    avg_prices = (
+        snap_df.groupby("team")["average_price"]
+        .mean()
+        .reset_index()
+        .rename(columns={"average_price": "avg_ticket_price"})
+    )
+
+    merged = agg.merge(avg_prices, on="team", how="inner")
+    merged = merged.dropna(subset=["avg_ticket_price"])
+
+    result = [
+        PerformancePricePoint(
+            team=row["team"],
+            win_pct=round(float(row["win_pct"]), 3),
+            goals_per_game=round(float(row["avg_goals"]), 2),
+            shots_per_game=round(float(row["avg_shots"]), 1),
+            avg_ticket_price=round(float(row["avg_ticket_price"]), 2),
+        )
+        for _, row in merged.iterrows()
+    ]
+    cache.set("performance_price", result)
+    return result
+
+
+@router.get("/attendance-overview", response_model=list[AttendanceOverviewPoint])
+def get_attendance_overview():
+    cached = cache.get("attendance_overview")
+    if cached is not None:
+        return cached
+
+    games = select(
+        "games",
+        columns="home_team_id,season_id,attendance",
+        filters={"attendance": "not.is.null"},
+    )
+    if not games:
+        return []
+
+    teams_full = _get_teams_full()
+    team_div = {t["id"]: t.get("division") for t in teams_full}
+
+    df = pd.DataFrame(games)
+    df["division"] = df["home_team_id"].map(team_div)
+    df = df.dropna(subset=["division"])
+
+    grouped = (
+        df.groupby(["season_id", "division"])
+        .agg(
+            avg_attendance=("attendance", "mean"),
+            games_count=("attendance", "count"),
+        )
+        .reset_index()
+        .sort_values("season_id")
+    )
+
+    result = [
+        AttendanceOverviewPoint(
+            season_id=int(row["season_id"]),
+            season_display=_format_season(int(row["season_id"])),
+            division=row["division"],
+            avg_attendance=round(float(row["avg_attendance"]), 0),
+            games_count=int(row["games_count"]),
+        )
+        for _, row in grouped.iterrows()
+    ]
+    cache.set("attendance_overview", result)
+    return result
+
+
+@router.get("/advanced-attendance", response_model=list[AdvancedAttendancePoint])
+def get_advanced_attendance():
+    cached = cache.get("advanced_attendance")
+    if cached is not None:
+        return cached
+
+    try:
+        adv_stats = select(
+            "game_advanced_stats",
+            columns="game_id,team_id,corsi_pct,x_goals_pct,fenwick_pct",
+            filters={"situation": "eq.all"},
+        )
+    except Exception:
+        return []
+    if not adv_stats:
+        return []
+
+    att_games = select(
+        "games",
+        columns="id,home_team_id,attendance",
+        filters={"attendance": "not.is.null"},
+    )
+    if not att_games:
+        return []
+
+    teams_list = select("teams", columns="id,abbreviation")
+    teams_map = {t["id"]: t["abbreviation"] for t in teams_list}
+
+    adv_df = pd.DataFrame(adv_stats)
+    games_df = pd.DataFrame(att_games).rename(columns={"id": "game_id"})
+
+    # Join on game_id, keep only home team rows to avoid double-counting attendance
+    merged = adv_df.merge(games_df, on="game_id", how="inner")
+    merged = merged[merged["team_id"] == merged["home_team_id"]]
+
+    if merged.empty:
+        return []
+
+    merged["team"] = merged["team_id"].map(teams_map)
+    merged = merged.dropna(subset=["team", "corsi_pct", "x_goals_pct", "fenwick_pct"])
+
+    grouped = (
+        merged.groupby("team")
+        .agg(
+            corsi_pct=("corsi_pct", "mean"),
+            x_goals_pct=("x_goals_pct", "mean"),
+            fenwick_pct=("fenwick_pct", "mean"),
+            avg_attendance=("attendance", "mean"),
+        )
+        .reset_index()
+    )
+
+    result = [
+        AdvancedAttendancePoint(
+            team=row["team"],
+            corsi_pct=round(float(row["corsi_pct"]) * 100, 1),
+            x_goals_pct=round(float(row["x_goals_pct"]) * 100, 1),
+            fenwick_pct=round(float(row["fenwick_pct"]) * 100, 1),
+            avg_attendance=round(float(row["avg_attendance"]), 0),
+        )
+        for _, row in grouped.iterrows()
+    ]
+    cache.set("advanced_attendance", result)
     return result

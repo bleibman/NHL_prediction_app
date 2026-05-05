@@ -15,7 +15,11 @@ import type {
   PriceAttendancePoint,
   PriceSpreadPoint,
   TicketFilterOptions,
+  TicketsInit,
   HistoricalSeasonData,
+  PerformancePricePoint,
+  AttendanceOverviewPoint,
+  AdvancedAttendancePoint,
 } from "./types";
 
 const BASE = process.env.NEXT_PUBLIC_API_URL || "";
@@ -109,6 +113,9 @@ export const runPredictions = (seasonId: number) =>
   });
 
 // Tickets
+export const getTicketsInit = () =>
+  fetchJson<TicketsInit>("/api/tickets/init");
+
 function buildQs(params: Record<string, string | undefined>): string {
   const sp = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
@@ -153,6 +160,15 @@ export const getAttendance = (params?: { team_abbrev?: string; season_id?: numbe
 
 export const getAttendanceTeams = () =>
   fetchJson<string[]>("/api/tickets/attendance-teams");
+
+export const getPerformancePrice = () =>
+  fetchJson<PerformancePricePoint[]>("/api/tickets/performance-price");
+
+export const getAttendanceOverview = () =>
+  fetchJson<AttendanceOverviewPoint[]>("/api/tickets/attendance-overview");
+
+export const getAdvancedAttendance = () =>
+  fetchJson<AdvancedAttendancePoint[]>("/api/tickets/advanced-attendance");
 
 // Refresh
 export function startRefresh(

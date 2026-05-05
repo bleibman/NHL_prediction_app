@@ -1,5 +1,7 @@
 """Historical data API endpoints."""
 
+import asyncio
+
 from fastapi import APIRouter, HTTPException
 
 from db.supabase import select
@@ -149,17 +151,22 @@ def get_playoffs(season_id: int):
 
 
 @router.get("/season/{season_id}", response_model=HistoricalSeasonData)
-def get_season(season_id: int):
+async def get_season(season_id: int):
     """Return standings, scorers, and playoffs for a season in one call."""
     cache_key = f"hist_season_{season_id}"
     cached = cache.get(cache_key)
     if cached is not None:
         return cached
 
+    standings, scorers, playoffs = await asyncio.gather(
+        asyncio.to_thread(get_standings, season_id),
+        asyncio.to_thread(get_scorers, season_id),
+        asyncio.to_thread(get_playoffs, season_id),
+    )
     result = HistoricalSeasonData(
-        standings=get_standings(season_id),
-        scorers=get_scorers(season_id),
-        playoffs=get_playoffs(season_id),
+        standings=standings,
+        scorers=scorers,
+        playoffs=playoffs,
     )
     cache.set(cache_key, result)
     return result

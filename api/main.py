@@ -1,5 +1,6 @@
 """FastAPI entrypoint for the NHL Predictions API."""
 
+import asyncio
 import os
 import logging
 from contextlib import asynccontextmanager
@@ -17,16 +18,21 @@ async def lifespan(app: FastAPI):
     """Warm caches on startup so first requests are fast."""
     logger.info("Warming caches...")
     try:
-        dashboard.get_init()
-        historical.get_seasons()
-        historical.get_teams()
-        # Warm the latest season standings
+        # Warm dashboard init (async) and historical base data concurrently
+        await asyncio.gather(
+            dashboard.get_init(),
+            asyncio.to_thread(historical.get_seasons),
+            asyncio.to_thread(historical.get_teams),
+        )
+        # Warm latest season data concurrently (seasons is now cached)
         seasons = historical.get_seasons()
         if seasons:
             latest = seasons[-1]
-            historical.get_standings(latest)
-            historical.get_scorers(latest)
-            historical.get_playoffs(latest)
+            await asyncio.gather(
+                asyncio.to_thread(historical.get_standings, latest),
+                asyncio.to_thread(historical.get_scorers, latest),
+                asyncio.to_thread(historical.get_playoffs, latest),
+            )
         logger.info("Cache warming complete")
     except Exception as e:
         logger.warning("Cache warming failed (non-fatal): %s", e)

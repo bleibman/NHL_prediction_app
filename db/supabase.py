@@ -42,8 +42,12 @@ def select(
     filters: dict[str, str] | None = None,
     order: str | None = None,
     limit: int | None = None,
+    timeout: int = 120,
 ) -> list[dict]:
     """SELECT rows from a table.
+
+    Automatically paginates when the server returns its max-rows limit
+    (typically 1000) to fetch all matching rows.
 
     filters maps column names to PostgREST filter expressions,
     e.g. {"season_id": "eq.20242025", "points": "gt.90"}.
@@ -55,10 +59,27 @@ def select(
         params["order"] = order
     if limit:
         params["limit"] = str(limit)
+        resp = _session.get(_url(table), params=params, timeout=timeout)
+        resp.raise_for_status()
+        return resp.json()
 
-    resp = _session.get(_url(table), params=params, timeout=30)
-    resp.raise_for_status()
-    return resp.json()
+    # No explicit limit — paginate to get all rows
+    page_size = 1000
+    all_rows: list[dict] = []
+    offset = 0
+
+    while True:
+        params["limit"] = str(page_size)
+        params["offset"] = str(offset)
+        resp = _session.get(_url(table), params=params, timeout=timeout)
+        resp.raise_for_status()
+        batch = resp.json()
+        all_rows.extend(batch)
+        if len(batch) < page_size:
+            break
+        offset += page_size
+
+    return all_rows
 
 
 # ------------------------------------------------------------------
@@ -74,7 +95,7 @@ def upsert(table: str, rows: list[dict], on_conflict: str | None = None) -> list
     if not rows:
         return []
 
-    batch_size = 500
+    batch_size = 200
     all_results: list[dict] = []
 
     for i in range(0, len(rows), batch_size):
@@ -87,7 +108,7 @@ def upsert(table: str, rows: list[dict], on_conflict: str | None = None) -> list
             params["on_conflict"] = on_conflict
 
         resp = _session.post(
-            _url(table), json=batch, headers=headers, params=params, timeout=60,
+            _url(table), json=batch, headers=headers, params=params, timeout=120,
         )
         if resp.status_code >= 400:
             logger.error(
@@ -108,6 +129,18 @@ def insert(table: str, rows: list[dict]) -> list[dict]:
     headers = {"Prefer": "return=representation"}
     resp = _session.post(_url(table), json=rows, headers=headers, timeout=60)
     resp.raise_for_status()
+    return resp.json()
+
+
+def update(table: str, data: dict, filters: dict[str, str]) -> list[dict]:
+    """PATCH rows matching filters with the given data."""
+    headers = {"Prefer": "return=representation"}
+    resp = _session.patch(
+        _url(table), json=data, headers=headers, params=filters, timeout=120,
+    )
+    if resp.status_code >= 400:
+        logger.error("Update %s failed (%d): %s", table, resp.status_code, resp.text[:500])
+        resp.raise_for_status()
     return resp.json()
 
 

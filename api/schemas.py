@@ -138,6 +138,46 @@ class TicketFilterOptions(BaseModel):
     teams: list[str]
 
 
+class PerformancePricePoint(BaseModel):
+    team: str
+    win_pct: float
+    goals_per_game: float
+    shots_per_game: float
+    avg_ticket_price: float
+
+
+class AttendanceOverviewPoint(BaseModel):
+    season_id: int
+    season_display: str
+    division: str
+    avg_attendance: float
+    games_count: int
+
+
+class AdvancedAttendancePoint(BaseModel):
+    team: str
+    corsi_pct: float
+    x_goals_pct: float
+    fenwick_pct: float
+    avg_attendance: float
+
+
+class TicketsInit(BaseModel):
+    summary: TicketSummary
+    upcoming: list[UpcomingGame]
+    price_trends: list[PriceTrendPoint]
+    team_trends: list[TeamPriceTrendPoint]
+    team_prices: list[TeamPrice]
+    spread: list[PriceSpreadPoint]
+    correlation: list[PriceAttendancePoint]
+    attendance_teams: list[str]
+    filter_options: TicketFilterOptions
+    team_divisions: dict[str, str]
+    performance_price: list[PerformancePricePoint]
+    attendance_overview: list[AttendanceOverviewPoint]
+    advanced_attendance: list[AdvancedAttendancePoint]
+
+
 class DashboardInit(BaseModel):
     summary: DashboardSummary
     standings: list[StandingRow]
