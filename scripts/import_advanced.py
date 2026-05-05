@@ -3,13 +3,15 @@
 import csv, os, sys, time
 import psycopg2
 from psycopg2.extras import execute_values
+from dotenv import load_dotenv
 
+load_dotenv()
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from etl.kaggle_mappings import normalize_moneypuck_abbrev
 
 DB = dict(
     host='db.dcxjyjlrlrtjbnaxlymu.supabase.co', port=5432,
-    dbname='postgres', user='postgres', password='KpCc4Ykev8GBj#?',
+    dbname='postgres', user='postgres', password=os.environ['Database_PW'],
     connect_timeout=30, options='-c statement_timeout=600000',
 )
 CSV_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
