@@ -7,7 +7,7 @@ import DataTable from "@/components/ui/DataTable";
 import Select from "@/components/ui/Select";
 import Tabs from "@/components/ui/Tabs";
 import HighlightCard from "@/components/cards/HighlightCard";
-import PlotlyChart from "@/components/charts/PlotlyChart";
+import TrendLineChart from "@/components/charts/TrendLineChart";
 import { formatSeason } from "@/lib/utils";
 import { downloadCSV } from "@/lib/csv";
 import ExportButton from "@/components/ui/ExportButton";
@@ -187,8 +187,6 @@ export default function HistoricalPage() {
     );
 
   const champion = playoffs.find((p) => p.round_name === "Stanley Cup Final");
-  const trendY = trendData.map((d) => d[metric as keyof TeamTrendPoint] as number);
-  const trendX = trendData.map((d) => d.season_display);
 
   return (
     <>
@@ -247,26 +245,18 @@ export default function HistoricalPage() {
       </div>
 
       {trendData.length > 0 && (
-        <PlotlyChart
-          data={[
-            {
-              x: trendX,
-              y: trendY,
-              type: "scatter",
-              mode: "lines+markers",
-              marker: { color: "#1f6feb", size: 6 },
-              line: { color: "#1f6feb", width: 2.5 },
-            },
-          ]}
-          layout={{
-            xaxis: { title: "", gridcolor: "#21262d", zerolinecolor: "#21262d" },
-            yaxis: {
-              title: METRIC_OPTIONS.find((m) => m.value === metric)?.label ?? "",
-              gridcolor: "#21262d",
-              zerolinecolor: "#21262d",
-            },
-            showlegend: false,
-          }}
+        <TrendLineChart
+          data={trendData.map((d) => ({
+            season: d.season_display,
+            value: d[metric as keyof TeamTrendPoint] as number,
+          }))}
+          xKey="season"
+          series={[{
+            key: "value",
+            name: METRIC_OPTIONS.find((m) => m.value === metric)?.label ?? "",
+            color: "#1f6feb",
+          }]}
+          yAxisLabel={METRIC_OPTIONS.find((m) => m.value === metric)?.label ?? ""}
         />
       )}
     </>

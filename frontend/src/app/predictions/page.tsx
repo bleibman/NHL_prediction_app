@@ -7,7 +7,7 @@ import Select from "@/components/ui/Select";
 import Button from "@/components/ui/Button";
 import DataTable from "@/components/ui/DataTable";
 import HighlightCard from "@/components/cards/HighlightCard";
-import PlotlyChart from "@/components/charts/PlotlyChart";
+import HorizontalBarChart from "@/components/charts/HorizontalBarChart";
 import { formatSeason } from "@/lib/utils";
 import { getPredictionSeasons, runPredictions } from "@/lib/api";
 import type { PredictionRow } from "@/lib/types";
@@ -99,35 +99,19 @@ export default function PredictionsPage() {
           </div>
 
           <h2 className="text-lg font-bold text-text-bright mb-4">Win Probabilities</h2>
-          <PlotlyChart
-            data={[
-              {
-                x: chartData.map((d) => d.cup_probability),
-                y: chartData.map((d) => d.abbreviation),
-                type: "bar",
-                orientation: "h",
-                marker: {
-                  color: chartData.map((d) => d.cup_probability),
-                  colorscale: [
-                    [0, "#21262d"],
-                    [0.5, "#1f6feb"],
-                    [1, "#58a6ff"],
-                  ],
-                },
-                text: chartData.map((d) => `${d.cup_probability.toFixed(1)}%`),
-                textposition: "outside",
-                textfont: { color: "#c9d1d9", size: 12 },
-              },
-            ]}
-            layout={{
-              xaxis: {
-                title: "Win Probability (%)",
-                gridcolor: "#21262d",
-                zerolinecolor: "#21262d",
-              },
-              yaxis: { title: "", gridcolor: "#21262d", zerolinecolor: "#21262d" },
-              showlegend: false,
-            }}
+          <HorizontalBarChart
+            data={chartData}
+            xKey="cup_probability"
+            yKey="abbreviation"
+            colorScale={["#21262d", "#1f6feb", "#58a6ff"]}
+            labelFormatter={(v) => `${Number(v).toFixed(1)}%`}
+            tooltipFormatter={(p) => (
+              <>
+                <div style={{ fontWeight: 600 }}>{String(p.abbreviation)}</div>
+                <div>Win Probability: {Number(p.cup_probability).toFixed(1)}%</div>
+              </>
+            )}
+            xAxisLabel="Win Probability (%)"
             height={Math.max(400, chartData.length * 32)}
           />
 

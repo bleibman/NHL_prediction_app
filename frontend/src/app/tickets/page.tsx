@@ -7,7 +7,14 @@ import StatCard from "@/components/cards/StatCard";
 import InfoBox from "@/components/cards/InfoBox";
 import DataTable from "@/components/ui/DataTable";
 import Select from "@/components/ui/Select";
-import PlotlyChart from "@/components/charts/PlotlyChart";
+import HorizontalBarChart from "@/components/charts/HorizontalBarChart";
+import TrendLineChart from "@/components/charts/TrendLineChart";
+import type { SeriesConfig } from "@/components/charts/TrendLineChart";
+import MultiLineChart from "@/components/charts/MultiLineChart";
+import SimpleBarChart from "@/components/charts/SimpleBarChart";
+import BubbleScatterChart from "@/components/charts/BubbleScatterChart";
+import AdvancedScatterChart from "@/components/charts/AdvancedScatterChart";
+import { TEAM_COLORS } from "@/components/charts/chartTheme";
 import {
   getTicketsInit,
   getTicketSummary,
@@ -71,13 +78,6 @@ const gameColumns = [
 ];
 
 type FilterMode = "all" | "division" | "team";
-
-const TEAM_COLORS = [
-  "#1f6feb", "#58a6ff", "#f78166", "#7ee787", "#d2a8ff",
-  "#ff7b72", "#79c0ff", "#ffa657", "#56d4dd", "#e6edf3",
-  "#b392f0", "#ffdf5d", "#85e89d", "#f692ce", "#9ecbff",
-  "#dbedff",
-];
 
 export default function TicketsPage() {
   // Full unfiltered data from /init
@@ -264,9 +264,10 @@ export default function TicketsPage() {
 
   const hasTicketData = summary && summary.games_tracked > 0;
 
-  // Build price trends chart traces
+  // Build price trends data for TrendLineChart
   const showTeamLines = filterMode !== "all" && teamTrends.length > 0;
-  const trendTraces = (() => {
+
+  const { trendChartData, trendSeries } = useMemo(() => {
     if (showTeamLines) {
       const byTeam = new Map<string, TeamPriceTrendPoint[]>();
       for (const pt of teamTrends) {
@@ -274,43 +275,46 @@ export default function TicketsPage() {
         arr.push(pt);
         byTeam.set(pt.team, arr);
       }
-      const entries = Array.from(byTeam.entries());
-      const traces: Plotly.Data[] = entries.map(([team, points], i) => {
-        const sorted = points.sort((a, b) => a.days_until_game - b.days_until_game);
-        return {
-          x: sorted.map((p) => p.days_until_game),
-          y: sorted.map((p) => p.average_price),
-          type: "scatter" as const,
-          mode: "lines+markers" as const,
-          name: team,
-          marker: { color: TEAM_COLORS[i % TEAM_COLORS.length], size: 5 },
-          line: { color: TEAM_COLORS[i % TEAM_COLORS.length], width: 2 },
-        };
-      });
-      // League average reference line
-      if (trends.length >= 2) {
-        traces.push({
-          x: trends.map((t) => t.days_until_game),
-          y: trends.map((t) => t.average_price),
-          type: "scatter" as const,
-          mode: "lines" as const,
-          name: "League Avg",
-          line: { color: "#484f58", width: 2, dash: "dash" },
-        });
+      // Collect all unique days_until_game values
+      const allDays = new Set<number>();
+      for (const pts of byTeam.values()) {
+        for (const p of pts) allDays.add(p.days_until_game);
       }
-      return traces;
+      for (const t of trends) allDays.add(t.days_until_game);
+
+      const teamNames = Array.from(byTeam.keys());
+      const rows = Array.from(allDays)
+        .sort((a, b) => a - b)
+        .map((day) => {
+          const row: Record<string, unknown> = { days_until_game: day };
+          for (const [team, pts] of byTeam.entries()) {
+            const match = pts.find((p) => p.days_until_game === day);
+            if (match) row[team] = match.average_price;
+          }
+          const leagueMatch = trends.find((t) => t.days_until_game === day);
+          if (leagueMatch) row["League Avg"] = leagueMatch.average_price;
+          return row;
+        });
+
+      const series: SeriesConfig[] = teamNames.map((team, i) => ({
+        key: team,
+        name: team,
+        color: TEAM_COLORS[i % TEAM_COLORS.length],
+      }));
+      if (trends.length >= 2) {
+        series.push({ key: "League Avg", name: "League Avg", color: "#484f58", dashed: true });
+      }
+      return { trendChartData: rows, trendSeries: series };
     }
-    return [
-      {
-        x: trends.map((t) => t.days_until_game),
-        y: trends.map((t) => t.average_price),
-        type: "scatter" as const,
-        mode: "lines+markers" as const,
-        marker: { color: "#1f6feb", size: 6 },
-        line: { color: "#1f6feb", width: 2.5 },
-      },
-    ];
-  })();
+
+    // Simple league-wide trend
+    const rows = trends.map((t) => ({
+      days_until_game: t.days_until_game,
+      average_price: t.average_price,
+    }));
+    const series: SeriesConfig[] = [{ key: "average_price", name: "Average Price", color: "#1f6feb" }];
+    return { trendChartData: rows, trendSeries: series };
+  }, [showTeamLines, teamTrends, trends]);
 
   const filterModeOptions = [
     { value: "all", label: "All Teams" },
@@ -388,23 +392,14 @@ export default function TicketsPage() {
             Price Trends {filterMode !== "all" ? "(by Team)" : ""}
           </h2>
           {(trends.length >= 2 || (showTeamLines && teamTrends.length > 0)) ? (
-            <PlotlyChart
-              data={trendTraces}
-              layout={{
-                xaxis: {
-                  title: "Days Until Game",
-                  autorange: "reversed",
-                  gridcolor: "#21262d",
-                  zerolinecolor: "#21262d",
-                },
-                yaxis: {
-                  title: "Average Price ($)",
-                  gridcolor: "#21262d",
-                  zerolinecolor: "#21262d",
-                },
-                showlegend: showTeamLines,
-                legend: { font: { color: "#c9d1d9" } },
-              }}
+            <TrendLineChart
+              data={trendChartData}
+              xKey="days_until_game"
+              series={trendSeries}
+              reversedX
+              showLegend={showTeamLines}
+              xAxisLabel="Days Until Game"
+              yAxisLabel="Average Price ($)"
             />
           ) : (
             <InfoBox text="Price trend analysis requires at least 2 days of snapshot data. Run the daily ticket fetch to accumulate history." />
@@ -415,40 +410,22 @@ export default function TicketsPage() {
           {/* Price Spread */}
           <h2 className="text-lg font-bold text-text-bright mb-4">Price Spread by Team</h2>
           {spreadData.length > 0 ? (
-            <PlotlyChart
-              data={[
-                {
-                  x: spreadData.map((s) => s.avg_spread),
-                  y: spreadData.map((s) => s.team),
-                  type: "bar",
-                  orientation: "h",
-                  marker: {
-                    color: spreadData.map((s) => s.avg_spread),
-                    colorscale: [
-                      [0, "#238636"],
-                      [0.5, "#d29922"],
-                      [1, "#da3633"],
-                    ],
-                  },
-                  text: spreadData.map(
-                    (s) => `$${Math.round(s.avg_spread)} (Low: $${Math.round(s.avg_lowest)} / High: $${Math.round(s.avg_highest)})`
-                  ),
-                  textposition: "outside",
-                  textfont: { color: "#c9d1d9", size: 11 },
-                  hovertemplate:
-                    "<b>%{y}</b><br>Spread: $%{x:.0f}<br>Avg Low: $%{customdata[0]:.0f}<br>Avg High: $%{customdata[1]:.0f}<br>Listings: %{customdata[2]}<extra></extra>",
-                  customdata: spreadData.map((s) => [s.avg_lowest, s.avg_highest, s.listing_count]),
-                },
-              ]}
-              layout={{
-                xaxis: {
-                  title: "Average Price Spread ($)",
-                  gridcolor: "#21262d",
-                  zerolinecolor: "#21262d",
-                },
-                yaxis: { title: "", gridcolor: "#21262d", zerolinecolor: "#21262d" },
-                showlegend: false,
-              }}
+            <HorizontalBarChart
+              data={spreadData}
+              xKey="avg_spread"
+              yKey="team"
+              colorScale={["#238636", "#d29922", "#da3633"]}
+              labelFormatter={(v) => `$${Math.round(Number(v))}`}
+              tooltipFormatter={(p) => (
+                <>
+                  <div style={{ fontWeight: 600 }}>{String(p.team)}</div>
+                  <div>Spread: ${Math.round(Number(p.avg_spread))}</div>
+                  <div>Avg Low: ${Math.round(Number(p.avg_lowest))}</div>
+                  <div>Avg High: ${Math.round(Number(p.avg_highest))}</div>
+                  <div>Listings: {String(p.listing_count)}</div>
+                </>
+              )}
+              xAxisLabel="Average Price Spread ($)"
               height={Math.max(400, spreadData.length * 28)}
             />
           ) : (
@@ -460,39 +437,21 @@ export default function TicketsPage() {
           {/* Team Price Comparison */}
           <h2 className="text-lg font-bold text-text-bright mb-4">Average Price by Team</h2>
           {teamPrices.length > 0 && (
-            <PlotlyChart
-              data={[
-                {
-                  x: teamPrices.map((t) => t.average_price),
-                  y: teamPrices.map((t) => t.team),
-                  type: "bar",
-                  orientation: "h",
-                  marker: {
-                    color: teamPrices.map((t) => t.average_price),
-                    colorscale: [
-                      [0, "#21262d"],
-                      [0.5, "#1f6feb"],
-                      [1, "#58a6ff"],
-                    ],
-                  },
-                  text: teamPrices.map((t) => `$${Math.round(t.average_price)}`),
-                  textposition: "outside",
-                  textfont: { color: "#c9d1d9", size: 12 },
-                  hovertemplate: teamPrices.map(
-                    (t) =>
-                      `<b>${t.team}</b><br>Avg: $${Math.round(t.average_price)}<br>Low: ${t.lowest_price != null ? "$" + Math.round(t.lowest_price) : "N/A"}<br>High: ${t.highest_price != null ? "$" + Math.round(t.highest_price) : "N/A"}<extra></extra>`
-                  ),
-                },
-              ]}
-              layout={{
-                xaxis: {
-                  title: "Average Ticket Price ($)",
-                  gridcolor: "#21262d",
-                  zerolinecolor: "#21262d",
-                },
-                yaxis: { title: "", gridcolor: "#21262d", zerolinecolor: "#21262d" },
-                showlegend: false,
-              }}
+            <HorizontalBarChart
+              data={teamPrices}
+              xKey="average_price"
+              yKey="team"
+              colorScale={["#21262d", "#1f6feb", "#58a6ff"]}
+              labelFormatter={(v) => `$${Math.round(Number(v))}`}
+              tooltipFormatter={(p) => (
+                <>
+                  <div style={{ fontWeight: 600 }}>{String(p.team)}</div>
+                  <div>Avg: ${Math.round(Number(p.average_price))}</div>
+                  <div>Low: {p.lowest_price != null ? `$${Math.round(Number(p.lowest_price))}` : "N/A"}</div>
+                  <div>High: {p.highest_price != null ? `$${Math.round(Number(p.highest_price))}` : "N/A"}</div>
+                </>
+              )}
+              xAxisLabel="Average Ticket Price ($)"
               height={Math.max(400, teamPrices.length * 28)}
             />
           )}
@@ -502,41 +461,27 @@ export default function TicketsPage() {
           {/* Performance vs Ticket Price */}
           <h2 className="text-lg font-bold text-text-bright mb-4">Performance vs Ticket Price</h2>
           {performancePrice.length > 0 ? (
-            <PlotlyChart
-              data={[
-                {
-                  x: performancePrice.map((p) => p.avg_ticket_price),
-                  y: performancePrice.map((p) => p.win_pct),
-                  text: performancePrice.map((p) => p.team),
-                  type: "scatter",
-                  mode: "markers+text",
-                  textposition: "top center",
-                  textfont: { color: "#c9d1d9", size: 10 },
-                  marker: {
-                    color: "#1f6feb",
-                    size: performancePrice.map((p) => Math.max(p.goals_per_game * 10, 8)),
-                    opacity: 0.8,
-                  },
-                  hovertemplate: performancePrice.map(
-                    (p) =>
-                      `<b>${p.team}</b><br>Win%: ${(p.win_pct * 100).toFixed(1)}%<br>Goals/Game: ${p.goals_per_game}<br>Shots/Game: ${p.shots_per_game}<br>Avg Price: $${Math.round(p.avg_ticket_price)}<extra></extra>`
-                  ),
-                },
-              ]}
-              layout={{
-                xaxis: {
-                  title: "Average Ticket Price ($)",
-                  gridcolor: "#21262d",
-                  zerolinecolor: "#21262d",
-                },
-                yaxis: {
-                  title: "Win Percentage",
-                  gridcolor: "#21262d",
-                  zerolinecolor: "#21262d",
-                  tickformat: ".0%",
-                },
-                showlegend: false,
-              }}
+            <BubbleScatterChart
+              data={performancePrice.map((p) => ({
+                ...p,
+                bubble_size: Math.max(p.goals_per_game * 10, 8),
+              }))}
+              xKey="avg_ticket_price"
+              yKey="win_pct"
+              sizeKey="bubble_size"
+              labelKey="team"
+              xAxisLabel="Average Ticket Price ($)"
+              yAxisLabel="Win Percentage"
+              yTickFormatter={(v) => `${(v * 100).toFixed(0)}%`}
+              tooltipFormatter={(p) => (
+                <>
+                  <div style={{ fontWeight: 600 }}>{String(p.team)}</div>
+                  <div>Win%: {(Number(p.win_pct) * 100).toFixed(1)}%</div>
+                  <div>Goals/Game: {String(p.goals_per_game)}</div>
+                  <div>Shots/Game: {String(p.shots_per_game)}</div>
+                  <div>Avg Price: ${Math.round(Number(p.avg_ticket_price))}</div>
+                </>
+              )}
             />
           ) : (
             <InfoBox text="No performance-price data available. Requires both game_team_stats (Kaggle import) and ticket snapshot data." />
@@ -549,42 +494,30 @@ export default function TicketsPage() {
             Price vs Attendance (Capacity Utilization)
           </h2>
           {correlation.length > 0 ? (
-            <PlotlyChart
-              data={[
-                {
-                  x: correlation.map((c) => c.avg_ticket_price),
-                  y: correlation.map((c) => c.utilization_pct ?? c.avg_attendance),
-                  text: correlation.map((c) => c.team),
-                  type: "scatter",
-                  mode: "markers+text",
-                  textposition: "top center",
-                  textfont: { color: "#c9d1d9", size: 10 },
-                  marker: {
-                    color: "#1f6feb",
-                    size: 12,
-                    opacity: 0.8,
-                  },
-                  hovertemplate: correlation.map(
-                    (c) =>
-                      `<b>${c.team}</b><br>Avg Price: $${Math.round(c.avg_ticket_price)}<br>Avg Attendance: ${Math.round(c.avg_attendance).toLocaleString()}<br>Capacity: ${c.capacity?.toLocaleString() ?? "N/A"}<br>Utilization: ${c.utilization_pct != null ? c.utilization_pct + "%" : "N/A"}<extra></extra>`
-                  ),
-                },
-              ]}
-              layout={{
-                xaxis: {
-                  title: "Average Ticket Price ($)",
-                  gridcolor: "#21262d",
-                  zerolinecolor: "#21262d",
-                },
-                yaxis: {
-                  title: correlation.some((c) => c.utilization_pct != null)
-                    ? "Capacity Utilization (%)"
-                    : "Average Attendance",
-                  gridcolor: "#21262d",
-                  zerolinecolor: "#21262d",
-                },
-                showlegend: false,
-              }}
+            <BubbleScatterChart
+              data={correlation.map((c) => ({
+                ...c,
+                y_value: c.utilization_pct ?? c.avg_attendance,
+              }))}
+              xKey="avg_ticket_price"
+              yKey="y_value"
+              labelKey="team"
+              fixedSize={144}
+              xAxisLabel="Average Ticket Price ($)"
+              yAxisLabel={
+                correlation.some((c) => c.utilization_pct != null)
+                  ? "Capacity Utilization (%)"
+                  : "Average Attendance"
+              }
+              tooltipFormatter={(p) => (
+                <>
+                  <div style={{ fontWeight: 600 }}>{String(p.team)}</div>
+                  <div>Avg Price: ${Math.round(Number(p.avg_ticket_price))}</div>
+                  <div>Avg Attendance: {Math.round(Number(p.avg_attendance)).toLocaleString()}</div>
+                  <div>Capacity: {p.capacity != null ? Number(p.capacity).toLocaleString() : "N/A"}</div>
+                  <div>Utilization: {p.utilization_pct != null ? `${p.utilization_pct}%` : "N/A"}</div>
+                </>
+              )}
             />
           ) : (
             <InfoBox text="No correlation data available. Requires both ticket snapshot data and historical attendance data." />
@@ -597,42 +530,44 @@ export default function TicketsPage() {
       {/* League Attendance Trends */}
       <h2 className="text-lg font-bold text-text-bright mb-4">League Attendance Trends</h2>
       {attendanceOverview.length > 0 ? (
-        <PlotlyChart
-          data={(() => {
-            const byDiv = new Map<string, AttendanceOverviewPoint[]>();
-            for (const pt of attendanceOverview) {
-              const arr = byDiv.get(pt.division) ?? [];
-              arr.push(pt);
-              byDiv.set(pt.division, arr);
-            }
-            return Array.from(byDiv.entries()).map(([div, points], i) => {
-              const sorted = points.sort((a, b) => a.season_id - b.season_id);
-              return {
-                x: sorted.map((p) => p.season_display),
-                y: sorted.map((p) => p.avg_attendance),
-                type: "scatter" as const,
-                mode: "lines+markers" as const,
-                name: div,
-                marker: { color: TEAM_COLORS[i % TEAM_COLORS.length], size: 6 },
-                line: { color: TEAM_COLORS[i % TEAM_COLORS.length], width: 2 },
-                hovertemplate: sorted.map(
-                  (p) =>
-                    `<b>${div}</b><br>${p.season_display}<br>Avg: ${Math.round(p.avg_attendance).toLocaleString()}<br>Games: ${p.games_count}<extra></extra>`
-                ),
-              };
+        (() => {
+          // Merge division data into a single array keyed by season
+          const byDiv = new Map<string, AttendanceOverviewPoint[]>();
+          for (const pt of attendanceOverview) {
+            const arr = byDiv.get(pt.division) ?? [];
+            arr.push(pt);
+            byDiv.set(pt.division, arr);
+          }
+          const divNames = Array.from(byDiv.keys());
+          const allSeasons = new Set<string>();
+          for (const pts of byDiv.values()) {
+            for (const p of pts) allSeasons.add(p.season_display);
+          }
+          const mergedData = Array.from(allSeasons)
+            .sort()
+            .map((season) => {
+              const row: Record<string, unknown> = { season };
+              for (const [div, pts] of byDiv.entries()) {
+                const match = pts.find((p) => p.season_display === season);
+                if (match) row[div] = match.avg_attendance;
+              }
+              return row;
             });
-          })()}
-          layout={{
-            xaxis: { title: "Season", gridcolor: "#21262d", zerolinecolor: "#21262d" },
-            yaxis: {
-              title: "Average Attendance",
-              gridcolor: "#21262d",
-              zerolinecolor: "#21262d",
-            },
-            showlegend: true,
-            legend: { font: { color: "#c9d1d9" } },
-          }}
-        />
+          const lines = divNames.map((div, i) => ({
+            key: div,
+            name: div,
+            color: TEAM_COLORS[i % TEAM_COLORS.length],
+          }));
+          return (
+            <MultiLineChart
+              data={mergedData}
+              xKey="season"
+              lines={lines}
+              xAxisLabel="Season"
+              yAxisLabel="Average Attendance"
+            />
+          );
+        })()
       ) : (
         <InfoBox text="No attendance overview data available. Requires games with attendance data." />
       )}
@@ -649,24 +584,17 @@ export default function TicketsPage() {
             />
           </div>
           {attendance.length > 0 ? (
-            <PlotlyChart
-              data={[
-                {
-                  x: attendance.map((a) => a.season_display),
-                  y: attendance.map((a) => a.avg_attendance),
-                  type: "bar",
-                  marker: { color: "#1f6feb" },
-                },
-              ]}
-              layout={{
-                xaxis: { title: "", gridcolor: "#21262d", zerolinecolor: "#21262d" },
-                yaxis: {
-                  title: "Average Attendance",
-                  gridcolor: "#21262d",
-                  zerolinecolor: "#21262d",
-                },
-                showlegend: false,
-              }}
+            <SimpleBarChart
+              data={attendance}
+              xKey="season_display"
+              yKey="avg_attendance"
+              yAxisLabel="Average Attendance"
+              tooltipFormatter={(p) => (
+                <>
+                  <div style={{ fontWeight: 600 }}>{String(p.season_display)}</div>
+                  <div>Avg Attendance: {Math.round(Number(p.avg_attendance)).toLocaleString()}</div>
+                </>
+              )}
             />
           ) : (
             <InfoBox text={`No attendance data for ${selectedAttTeam}.`} />
@@ -681,51 +609,30 @@ export default function TicketsPage() {
       {/* Advanced Metrics & Attendance */}
       <h2 className="text-lg font-bold text-text-bright mb-4">Expected Goals vs Attendance</h2>
       {advancedAttendance.length > 0 ? (
-        <PlotlyChart
-          data={[
-            {
-              x: advancedAttendance.map((a) => a.x_goals_pct),
-              y: advancedAttendance.map((a) => a.avg_attendance),
-              text: advancedAttendance.map((a) => a.team),
-              type: "scatter",
-              mode: "markers+text",
-              textposition: "top center",
-              textfont: { color: "#c9d1d9", size: 10 },
-              marker: {
-                color: advancedAttendance.map((a) => a.corsi_pct),
-                colorscale: [
-                  [0, "#da3633"],
-                  [0.5, "#1f6feb"],
-                  [1, "#58a6ff"],
-                ],
-                size: advancedAttendance.map((a) => Math.max((a.fenwick_pct - 46) * 4, 6)),
-                opacity: 0.85,
-                colorbar: {
-                  title: { text: "Corsi%", font: { color: "#c9d1d9" } },
-                  tickfont: { color: "#c9d1d9" },
-                  ticksuffix: "%",
-                },
-              },
-              hovertemplate: advancedAttendance.map(
-                (a) =>
-                  `<b>${a.team}</b><br>xGoals%: ${a.x_goals_pct.toFixed(1)}%<br>Corsi%: ${a.corsi_pct.toFixed(1)}%<br>Fenwick%: ${a.fenwick_pct.toFixed(1)}%<br>Avg Attendance: ${Math.round(a.avg_attendance).toLocaleString()}<extra></extra>`
-              ),
-            },
-          ]}
-          layout={{
-            xaxis: {
-              title: "Expected Goals % (Team Quality)",
-              gridcolor: "#21262d",
-              zerolinecolor: "#21262d",
-              ticksuffix: "%",
-            },
-            yaxis: {
-              title: "Average Attendance",
-              gridcolor: "#21262d",
-              zerolinecolor: "#21262d",
-            },
-            showlegend: false,
-          }}
+        <AdvancedScatterChart
+          data={advancedAttendance.map((a) => ({
+            ...a,
+            fenwick_size: Math.max((a.fenwick_pct - 46) * 4, 6),
+          }))}
+          xKey="x_goals_pct"
+          yKey="avg_attendance"
+          colorKey="corsi_pct"
+          sizeKey="fenwick_size"
+          labelKey="team"
+          colorScale={["#da3633", "#1f6feb", "#58a6ff"]}
+          colorLabel="Corsi%"
+          xTickSuffix="%"
+          xAxisLabel="Expected Goals % (Team Quality)"
+          yAxisLabel="Average Attendance"
+          tooltipFormatter={(p) => (
+            <>
+              <div style={{ fontWeight: 600 }}>{String(p.team)}</div>
+              <div>xGoals%: {Number(p.x_goals_pct).toFixed(1)}%</div>
+              <div>Corsi%: {Number(p.corsi_pct).toFixed(1)}%</div>
+              <div>Fenwick%: {Number(p.fenwick_pct).toFixed(1)}%</div>
+              <div>Avg Attendance: {Math.round(Number(p.avg_attendance)).toLocaleString()}</div>
+            </>
+          )}
         />
       ) : (
         <InfoBox text="No advanced metrics data available. Requires game_advanced_stats (Kaggle import) and games with attendance data." />
