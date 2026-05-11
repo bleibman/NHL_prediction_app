@@ -254,14 +254,6 @@ export default function TicketsPage() {
     setSelectedTeam(val);
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin h-8 w-8 border-2 border-primary border-t-transparent rounded-full" />
-      </div>
-    );
-  }
-
   const hasTicketData = summary && summary.games_tracked > 0;
 
   // Build price trends data for TrendLineChart
@@ -324,6 +316,14 @@ export default function TicketsPage() {
 
   const divisionOptions = divisions.map((d) => ({ value: d, label: d }));
   const teamOptions = teams.map((t) => ({ value: t, label: t }));
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin h-8 w-8 border-2 border-primary border-t-transparent rounded-full" />
+      </div>
+    );
+  }
 
   return (
     <>
