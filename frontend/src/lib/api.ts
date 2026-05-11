@@ -20,6 +20,7 @@ import type {
   PerformancePricePoint,
   AttendanceOverviewPoint,
   AdvancedAttendancePoint,
+  AnalyticsInit,
 } from "./types";
 
 const BASE = process.env.NEXT_PUBLIC_API_URL || "";
@@ -169,6 +170,16 @@ export const getAttendanceOverview = () =>
 
 export const getAdvancedAttendance = () =>
   fetchJson<AdvancedAttendancePoint[]>("/api/tickets/advanced-attendance");
+
+export const getAnalyticsInit = (seasonId?: number) =>
+  fetchJson<AnalyticsInit>(
+    `/api/tickets/analytics-init${seasonId ? `?season_id=${seasonId}` : ""}`
+  );
+
+export const getDivisionTrends = (metric?: string) => {
+  const qs = metric ? `?metric=${metric}` : "";
+  return fetchJson<import("./types").DivisionTrendRow[]>(`/api/tickets/division-trends${qs}`);
+};
 
 // Refresh
 export function startRefresh(

@@ -169,6 +169,76 @@ export interface TicketsInit {
   advanced_attendance: AdvancedAttendancePoint[];
 }
 
+export interface SeasonSummaryRow {
+  teams_count: number;
+  total_games: number;
+  avg_goals_per_game: number;
+  avg_hits_per_game: number;
+  ot_games: number;
+}
+
+export interface PhysicalityRow {
+  team: string;
+  hits_pg: number;
+  pim_pg: number;
+  blocked_pg: number;
+  takeaways_pg: number;
+  giveaways_pg: number;
+}
+
+export interface SpecialTeamsRow {
+  team: string;
+  pp_pct: number;
+  pk_pct: number;
+  pp_opportunities_pg: number;
+}
+
+export interface HomeAdvantageRow {
+  team: string;
+  home_win_pct: number;
+  away_win_pct: number;
+  differential: number;
+}
+
+export interface OvertimeRow {
+  team: string;
+  ot_so_win_rate: number;
+  reg_wins: number;
+  ot_wins: number;
+  so_wins: number;
+  reg_losses: number;
+  ot_losses: number;
+  so_losses: number;
+}
+
+export interface ShotQualityRow {
+  team: string;
+  hd_shot_share: number;
+  hd_goal_share: number;
+  x_goals_pct: number;
+  corsi_pct: number;
+}
+
+export interface DivisionTrendRow {
+  season_id: number;
+  season_display: string;
+  division: string;
+  metric_value: number;
+}
+
+export interface AnalyticsInit {
+  seasons: number[];
+  season_summary: SeasonSummaryRow | null;
+  physicality: PhysicalityRow[];
+  special_teams: SpecialTeamsRow[];
+  home_advantage: HomeAdvantageRow[];
+  overtime: OvertimeRow[];
+  shot_quality: ShotQualityRow[];
+  division_trends: DivisionTrendRow[];
+  filter_options: TicketFilterOptions;
+  team_divisions: Record<string, string>;
+}
+
 export interface DashboardInit {
   summary: DashboardSummary;
   standings: StandingRow[];

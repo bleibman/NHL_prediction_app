@@ -178,6 +178,76 @@ class TicketsInit(BaseModel):
     advanced_attendance: list[AdvancedAttendancePoint]
 
 
+class SeasonSummaryRow(BaseModel):
+    teams_count: int
+    total_games: int
+    avg_goals_per_game: float
+    avg_hits_per_game: float
+    ot_games: int
+
+
+class PhysicalityRow(BaseModel):
+    team: str
+    hits_pg: float
+    pim_pg: float
+    blocked_pg: float
+    takeaways_pg: float
+    giveaways_pg: float
+
+
+class SpecialTeamsRow(BaseModel):
+    team: str
+    pp_pct: float
+    pk_pct: float
+    pp_opportunities_pg: float
+
+
+class HomeAdvantageRow(BaseModel):
+    team: str
+    home_win_pct: float
+    away_win_pct: float
+    differential: float
+
+
+class OvertimeRow(BaseModel):
+    team: str
+    ot_so_win_rate: float
+    reg_wins: int
+    ot_wins: int
+    so_wins: int
+    reg_losses: int
+    ot_losses: int
+    so_losses: int
+
+
+class ShotQualityRow(BaseModel):
+    team: str
+    hd_shot_share: float
+    hd_goal_share: float
+    x_goals_pct: float
+    corsi_pct: float
+
+
+class DivisionTrendRow(BaseModel):
+    season_id: int
+    season_display: str
+    division: str
+    metric_value: float
+
+
+class AnalyticsInit(BaseModel):
+    seasons: list[int]
+    season_summary: SeasonSummaryRow | None
+    physicality: list[PhysicalityRow]
+    special_teams: list[SpecialTeamsRow]
+    home_advantage: list[HomeAdvantageRow]
+    overtime: list[OvertimeRow]
+    shot_quality: list[ShotQualityRow]
+    division_trends: list[DivisionTrendRow]
+    filter_options: TicketFilterOptions
+    team_divisions: dict[str, str]
+
+
 class DashboardInit(BaseModel):
     summary: DashboardSummary
     standings: list[StandingRow]

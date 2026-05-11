@@ -7,7 +7,7 @@ const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: "bar-chart" },
   { href: "/historical", label: "Historical Data", icon: "book" },
   { href: "/predictions", label: "Predictions", icon: "trending-up" },
-  { href: "/tickets", label: "Ticket Analytics", icon: "ticket" },
+  { href: "/tickets", label: "Team Analytics", icon: "ticket" },
   { href: "/data-refresh", label: "Data Refresh", icon: "refresh" },
 ];
 
