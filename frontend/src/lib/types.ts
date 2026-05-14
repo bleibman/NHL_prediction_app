@@ -228,6 +228,7 @@ export interface DivisionTrendRow {
 
 export interface AnalyticsInit {
   seasons: number[];
+  selected_season: number | null;
   season_summary: SeasonSummaryRow | null;
   physicality: PhysicalityRow[];
   special_teams: SpecialTeamsRow[];

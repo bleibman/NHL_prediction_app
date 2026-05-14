@@ -136,9 +136,10 @@ export default function TicketsPage() {
     getAnalyticsInit()
       .then((data) => {
         setSeasons(data.seasons);
-        if (data.seasons.length > 0) {
-          setSelectedSeason(data.seasons[0]);
-          loadedSeasonRef.current = data.seasons[0];
+        const initSeason = data.selected_season ?? (data.seasons.length > 0 ? data.seasons[0] : 0);
+        if (initSeason) {
+          setSelectedSeason(initSeason);
+          loadedSeasonRef.current = initSeason;
         }
         setSeasonSummary(data.season_summary);
         setPhysicality(data.physicality);
@@ -602,28 +603,22 @@ export default function TicketsPage() {
           {/* 6. Shot Quality Profile */}
           <h2 className="text-lg font-bold text-text-bright mb-4">Shot Quality Profile (Advanced)</h2>
           {filteredShotQuality.length > 0 ? (
-            <AdvancedScatterChart
+            <BubbleScatterChart
               data={filteredShotQuality.map((s) => ({
                 ...s,
-                corsi_size: Math.max((s.corsi_pct - 44) * 3, 4),
+                bubble_size: Math.max((s.x_goals_pct - 44) * 4, 6),
               }))}
-              xKey="hd_shot_share"
-              yKey="hd_goal_share"
-              colorKey="x_goals_pct"
-              sizeKey="corsi_size"
+              xKey="corsi_pct"
+              yKey="x_goals_pct"
+              sizeKey="bubble_size"
               labelKey="team"
-              colorScale={["#da3633", "#1f6feb", "#58a6ff"]}
-              colorLabel="xGoals%"
-              xTickSuffix="%"
-              xAxisLabel="High-Danger Shot Share (%)"
-              yAxisLabel="High-Danger Goal Share (%)"
+              xAxisLabel="Corsi% (Shot Attempt Share)"
+              yAxisLabel="Expected Goals% (xG%)"
               tooltipFormatter={(p) => (
                 <>
                   <div style={{ fontWeight: 600 }}>{String(p.team)}</div>
-                  <div>HD Shot Share: {Number(p.hd_shot_share).toFixed(1)}%</div>
-                  <div>HD Goal Share: {Number(p.hd_goal_share).toFixed(1)}%</div>
-                  <div>xGoals%: {Number(p.x_goals_pct).toFixed(1)}%</div>
                   <div>Corsi%: {Number(p.corsi_pct).toFixed(1)}%</div>
+                  <div>xGoals%: {Number(p.x_goals_pct).toFixed(1)}%</div>
                 </>
               )}
             />

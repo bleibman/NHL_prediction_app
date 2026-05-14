@@ -237,6 +237,7 @@ class DivisionTrendRow(BaseModel):
 
 class AnalyticsInit(BaseModel):
     seasons: list[int]
+    selected_season: int | None = None
     season_summary: SeasonSummaryRow | None
     physicality: list[PhysicalityRow]
     special_teams: list[SpecialTeamsRow]

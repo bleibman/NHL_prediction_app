@@ -1180,9 +1180,7 @@ def get_division_trends(metric: str = "points"):
 @router.get("/analytics-init", response_model=AnalyticsInit)
 async def get_analytics_init(season_id: int | None = None):
     seasons = _get_available_seasons()
-    if not season_id and seasons:
-        season_id = seasons[0]
-    elif not seasons:
+    if not seasons:
         fo = get_filter_options()
         teams_full = _get_teams_full()
         team_divisions = {
@@ -1192,6 +1190,7 @@ async def get_analytics_init(season_id: int | None = None):
         }
         return AnalyticsInit(
             seasons=[],
+            selected_season=None,
             season_summary=None,
             physicality=[],
             special_teams=[],
@@ -1202,6 +1201,18 @@ async def get_analytics_init(season_id: int | None = None):
             filter_options=fo,
             team_divisions=team_divisions,
         )
+
+    # If no season_id provided, find the most recent season with game_team_stats
+    if not season_id:
+        for candidate in seasons:
+            game_ids = await asyncio.to_thread(_game_ids_for_season, candidate)
+            if game_ids:
+                df = await asyncio.to_thread(_load_game_team_stats_for_season, candidate)
+                if not df.empty:
+                    season_id = candidate
+                    break
+        if not season_id:
+            season_id = seasons[0]  # fallback to newest even if empty
 
     # Pre-warm per-season caches so parallel threads don't duplicate queries
     await asyncio.to_thread(_game_ids_for_season, season_id)
@@ -1234,6 +1245,7 @@ async def get_analytics_init(season_id: int | None = None):
 
     return AnalyticsInit(
         seasons=seasons,
+        selected_season=season_id,
         season_summary=summary,
         physicality=physicality,
         special_teams=special_teams,
